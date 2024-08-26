@@ -1,0 +1,718 @@
+#define CAMERA_J1  //U20
+//#define CAMERA_J2  //U18
+//#define CAMERA_J3  //U19
+//#define CAMERA_J4  //U16 
+
+
+
+#if defined(CAMERA_J1)
+
+&csi2_dphy3 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipidphy3_in_ucam0: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&ov5695_out_4>;
+				data-lanes = <1 2>;
+			};
+			mipidphy3_in_ucam0_ov13850: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&ov13850_out_4>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			csidphy3_out: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&mipi4_csi2_input>;
+			};
+		};
+	};
+};
+
+&csi2_dphy1_hw {
+	status = "okay";
+};
+
+&i2c4 {
+	status = "okay";
+	pinctrl-0 = <&i2c4m1_xfer>;
+
+	ov5695_4: ov5695@36 {
+		status = "okay";
+		compatible = "ovti,ov5695";
+		reg = <0x36>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera4_clk>;
+		reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "default";
+		rockchip,camera-module-lens-name = "default";
+
+		port {
+			ov5695_out_4: endpoint {
+				remote-endpoint = <&mipidphy3_in_ucam0>;
+				data-lanes = <1 2>;
+			};
+		};
+		
+	};
+	ov13850_4: ov13850@10 {
+		status = "okay";
+		compatible = "otvi,ov13850";
+		reg = <0x10>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera4_clk>;
+		reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <3>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+		rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+		port {
+			ov13850_out_4: endpoint {
+				remote-endpoint = <&mipidphy3_in_ucam0_ov13850>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&mipi4_csi2 {
+	status = "okay";
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi4_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidphy3_out>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi4_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi4_in0>;
+			};
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mipi_lvds4 {
+	status = "okay";
+
+	port {
+		cif_mipi4_in0: endpoint {
+			remote-endpoint = <&mipi4_csi2_output>;
+		};
+	};
+};
+
+
+&rkcif_mipi_lvds4_sditf {
+	status = "okay";
+
+	port {
+		mipi_lvds4_sditf: endpoint {
+			remote-endpoint = <&isp0_vir0>;
+		};
+	};
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
+
+&rkisp0 {
+	status = "okay";
+};
+
+&isp0_mmu {
+	status = "okay";
+};
+
+&rkisp0_vir0 {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp0_vir0: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&mipi_lvds4_sditf>;
+		};
+	};
+};
+
+#endif
+
+#if defined(CAMERA_J2)
+/*
+ * mipi dcphy1
+ */
+&csi2_dcphy1 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_in_ucam1: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&ov5695_out_2>;
+				data-lanes = <1 2>;
+			};
+			
+			mipi_in_ucam1_ov13850: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&ov13850_out_2>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			csidcphy1_out: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&mipi1_csi2_input>;
+			};
+		};
+	};
+};
+
+&mipi_dcphy1 {
+	status = "okay";
+};
+
+&i2c7 {
+	status = "okay";
+	pinctrl-0 = <&i2c7m0_xfer>;
+
+	ov5695_2: ov5695@36 {
+		status = "okay";
+		compatible = "ovti,ov5695";
+		reg = <0x36>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M2>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera2_clk>;
+		reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_LOW>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "front";
+		rockchip,camera-module-name = "default";
+		rockchip,camera-module-lens-name = "default";
+		port {
+			ov5695_out_2: endpoint {
+				remote-endpoint = <&mipi_in_ucam1>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+	ov13850_2: ov13850@10 {
+		status = "okay";
+		compatible = "otvi,ov13850";
+		reg = <0x10>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M2>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera2_clk>;
+		reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <1>;
+		rockchip,camera-module-facing = "front";
+		rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+		rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+		port {
+			ov13850_out_2: endpoint {
+				remote-endpoint = <&mipi_in_ucam1_ov13850>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&mipi1_csi2 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi1_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidcphy1_out>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi1_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi_in1>;
+			};
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
+
+&rkcif_mipi_lvds1 {
+	status = "okay";
+
+	port {
+		cif_mipi_in1: endpoint {
+			remote-endpoint = <&mipi1_csi2_output>;
+		};
+	};
+};
+
+&rkcif_mipi_lvds1_sditf {
+	status = "okay";
+
+	port {
+		mipi_lvds1_sditf: endpoint {
+			remote-endpoint = <&isp1_vir0>;
+		};
+	};
+};
+
+&rkisp1 {
+	status = "okay";
+};
+
+&isp1_mmu {
+	status = "okay";
+};
+
+&rkisp1_vir0 {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp1_vir0: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&mipi_lvds1_sditf>;
+		};
+	};
+};
+
+
+#endif
+
+#if defined(CAMERA_J3)
+/*
+ * camera ov5695
+ */
+&csi2_dphy0 {
+        status = "okay";
+
+        ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                port@0 {
+                        reg = <0>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        mipidphy0_in_ucam0: endpoint@1 {
+                                reg = <1>;
+                                remote-endpoint = <&ov5695_out_3>;
+                                data-lanes = <1 2>;
+                        };
+			mipidphy0_in_ucam0_ov13850: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&ov13850_out_3>;
+				data-lanes = <1 2 3 4>;
+			};
+                };
+
+                port@1 {
+                        reg = <1>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        csidphy0_out: endpoint@0 {
+                                reg = <0>;
+                                remote-endpoint = <&mipi2_csi2_input>;
+                        };
+                };
+        };
+};
+
+&csi2_dphy0_hw {
+        status = "okay";
+};
+
+&i2c3 {
+        status = "okay";
+        clock-frequency = <100000>;
+	pinctrl-0 = <&i2c3m0_xfer>;
+
+	ov5695_3: ov5695@36 {
+		status = "okay";
+		compatible = "ovti,ov5695";
+		reg = <0x36>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera3_clk>;
+		reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
+                rockchip,camera-module-index = <2>;
+                rockchip,camera-module-facing = "back";
+                rockchip,camera-module-name = "default"; //"TongJu";
+                rockchip,camera-module-lens-name = "default"; //"CHT842-MD";
+                port {
+                        ov5695_out_3: endpoint {
+                                remote-endpoint = <&mipidphy0_in_ucam0>;
+                                data-lanes = <1 2>;
+                        };
+                };
+        };
+	ov13850_3: ov13850@10 {
+		status = "okay";
+		compatible = "otvi,ov13850";
+		reg = <0x10>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera3_clk>;
+		reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <2>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+		rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+		port {
+			ov13850_out_3: endpoint {
+				remote-endpoint = <&mipidphy0_in_ucam0_ov13850>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&mipi2_csi2 {
+        status = "okay";
+        ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port@0 {
+                        reg = <0>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        mipi2_csi2_input: endpoint@1 {
+                                reg = <1>;
+                                remote-endpoint = <&csidphy0_out>;
+                        };
+                };
+
+                port@1 {
+                        reg = <1>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        mipi2_csi2_output: endpoint@0 {
+                                reg = <0>;
+                                remote-endpoint = <&cif_mipi2_in0>;
+                        };
+                };
+        };
+};
+
+&rkcif {
+        status = "okay";
+};
+
+&rkcif_mipi_lvds2 {
+        status = "okay";
+
+        port {
+                cif_mipi2_in0: endpoint {
+                        remote-endpoint = <&mipi2_csi2_output>;
+                };
+        };
+};
+
+&rkcif_mipi_lvds2_sditf {
+        status = "okay";
+
+        port {
+                mipi_lvds2_sditf: endpoint {
+                        remote-endpoint = <&isp0_vir0>;
+                };
+        };
+};
+
+&rkcif_mmu {
+        status = "okay";
+};
+
+&rkisp0 {
+        status = "okay";
+};
+
+&isp0_mmu {
+        status = "okay";
+};
+
+&rkisp0_vir0 {
+        status = "okay";
+
+        port {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                isp0_vir0: endpoint@0 {
+                        reg = <0>;
+                        remote-endpoint = <&mipi_lvds2_sditf>;
+                };
+        };
+};
+
+
+#endif
+
+#if defined(CAMERA_J4)
+
+/*
+ * mipi dcphy0
+ */
+&csi2_dcphy0 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_in_ucam0: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&ov5695_out_1>;
+				data-lanes = <1 2>;
+			};
+
+			mipi_in_ucam0_ov13850: endpoint@2 {
+				reg = <2>;
+				remote-endpoint = <&ov13850_out_1>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			csidcphy0_out: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&mipi0_csi2_input>;
+			};
+		};
+	};
+};
+
+&mipi_dcphy0 {
+	status = "okay";
+};
+
+&i2c2 {
+	status = "okay";
+	pinctrl-0 = <&i2c2m4_xfer>;
+
+	ov5695_1: ov5695@36 {
+		status = "okay";
+		compatible = "ovti,ov5695";
+		reg = <0x36>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera1_clk>;
+		reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_LOW>;
+		pwdn-gpios = <&gpio1 RK_PA2 GPIO_ACTIVE_LOW>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "default";
+		rockchip,camera-module-lens-name = "default";
+		port {
+			ov5695_out_1: endpoint {
+				remote-endpoint = <&mipi_in_ucam0>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+	ov13850_1: ov13850@10 {
+		status = "okay";
+		compatible = "otvi,ov13850";
+		reg = <0x10>;
+		clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3588_PD_VI>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&mipim0_camera1_clk>;
+		reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
+		pwdn-gpios = <&gpio1 RK_PA2 GPIO_ACTIVE_HIGH>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+		rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+		port {
+			ov13850_out_1: endpoint {
+				remote-endpoint = <&mipi_in_ucam0_ov13850>;
+				data-lanes = <1 2 3 4>;
+			};
+		};
+	};
+};
+
+&mipi0_csi2 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi0_csi2_input: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&csidcphy0_out>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi0_csi2_output: endpoint@0 {
+				reg = <0>;
+				remote-endpoint = <&cif_mipi_in0>;
+			};
+		};
+	};
+};
+
+&rkcif {
+	status = "okay";
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
+
+&rkcif_mipi_lvds {
+	status = "okay";
+
+	port {
+		cif_mipi_in0: endpoint {
+			remote-endpoint = <&mipi0_csi2_output>;
+		};
+	};
+};
+
+&rkcif_mipi_lvds_sditf {
+	status = "okay";
+
+	port {
+		mipi_lvds_sditf: endpoint {
+			remote-endpoint = <&isp0_vir0>;
+		};
+	};
+};
+
+&rkisp0 {
+	status = "okay";
+};
+
+&isp0_mmu {
+	status = "okay";
+};
+
+&rkisp0_vir0 {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp0_vir0: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&mipi_lvds_sditf>;
+		};
+	};
+};
+
+
+#endif
