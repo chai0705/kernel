@@ -3588,8 +3588,8 @@ void unmap_mapping_pages(struct address_space *mapping, pgoff_t start,
 void unmap_mapping_range(struct address_space *mapping,
 		loff_t const holebegin, loff_t const holelen, int even_cows)
 {
-	pgoff_t hba = (pgoff_t)(holebegin) >> PAGE_SHIFT;
-	pgoff_t hlen = ((pgoff_t)(holelen) + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	pgoff_t hba = holebegin >> PAGE_SHIFT;
+	pgoff_t hlen = (holelen + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
 	/* Check for overflow. */
 	if (sizeof(holelen) > sizeof(hlen)) {
@@ -3623,16 +3623,8 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 	void *shadow = NULL;
 
 	if (vmf->flags & FAULT_FLAG_SPECULATIVE) {
-		bool allow_swap_spf = false;
-
-		/* ksm_might_need_to_copy() needs a stable VMA, spf can't be used */
-#ifndef CONFIG_KSM
-		trace_android_vh_do_swap_page_spf(&allow_swap_spf);
-#endif
-		if (!allow_swap_spf) {
-			pte_unmap(vmf->pte);
-			return VM_FAULT_RETRY;
-		}
+		pte_unmap(vmf->pte);
+		return VM_FAULT_RETRY;
 	}
 
 	ret = pte_unmap_same(vmf);
@@ -3649,10 +3641,6 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 
 	entry = pte_to_swp_entry(vmf->orig_pte);
 	if (unlikely(non_swap_entry(entry))) {
-		if (vmf->flags & FAULT_FLAG_SPECULATIVE) {
-			ret = VM_FAULT_RETRY;
-			goto out;
-		}
 		if (is_migration_entry(entry)) {
 			migration_entry_wait(vma->vm_mm, vmf->pmd,
 					     vmf->address);
@@ -5040,7 +5028,6 @@ static vm_fault_t ___handle_speculative_fault(struct mm_struct *mm,
 	pud_t pudval;
 	int seq;
 	vm_fault_t ret;
-	bool uffd_missing_sigbus = false;
 
 	/* Clear flags that may lead to release the mmap_sem to retry */
 	flags &= ~(FAULT_FLAG_ALLOW_RETRY|FAULT_FLAG_KILLABLE);
@@ -5053,30 +5040,19 @@ static vm_fault_t ___handle_speculative_fault(struct mm_struct *mm,
 		return VM_FAULT_RETRY;
 	}
 
+	if (!vmf_allows_speculation(&vmf))
+		return VM_FAULT_RETRY;
+
 	vmf.vma_flags = READ_ONCE(vmf.vma->vm_flags);
 	vmf.vma_page_prot = READ_ONCE(vmf.vma->vm_page_prot);
 
 #ifdef CONFIG_USERFAULTFD
-	/*
-	 * Only support SPF for SIGBUS+MISSING userfaults in private anonymous
-	 * VMAs. Rest all should be retried with mmap_lock.
-	 */
+	/* Can't call userland page fault handler in the speculative path */
 	if (unlikely(vmf.vma_flags & __VM_UFFD_FLAGS)) {
-		uffd_missing_sigbus = vma_is_anonymous(vmf.vma) &&
-					(vmf.vma_flags & VM_UFFD_MISSING) &&
-					userfaultfd_using_sigbus(vmf.vma);
-		if (!uffd_missing_sigbus) {
-			trace_spf_vma_notsup(_RET_IP_, vmf.vma, address);
-			return VM_FAULT_RETRY;
-		}
-		/* Not having anon_vma implies that the PTE is missing */
-		if (!vmf.vma->anon_vma)
-			return VM_FAULT_SIGBUS;
+		trace_spf_vma_notsup(_RET_IP_, vmf.vma, address);
+		return VM_FAULT_RETRY;
 	}
 #endif
-
-	if (!vmf_allows_speculation(&vmf))
-		return VM_FAULT_RETRY;
 
 	if (vmf.vma_flags & VM_GROWSDOWN || vmf.vma_flags & VM_GROWSUP) {
 		/*
@@ -5195,9 +5171,6 @@ static vm_fault_t ___handle_speculative_fault(struct mm_struct *mm,
 
 	local_irq_enable();
 
-	if (!vmf.pte && uffd_missing_sigbus)
-		return VM_FAULT_SIGBUS;
-
 	/*
 	 * We need to re-validate the VMA after checking the bounds, otherwise
 	 * we might have a false positive on the bounds.
@@ -5231,12 +5204,7 @@ static vm_fault_t ___handle_speculative_fault(struct mm_struct *mm,
 out_walk:
 	trace_spf_vma_notsup(_RET_IP_, vmf.vma, address);
 	local_irq_enable();
-	/*
-	 * Failing page-table walk is similar to page-missing so give an
-	 * opportunity to SIGBUS+MISSING userfault to handle it before retrying
-	 * with mmap_lock
-	 */
-	return uffd_missing_sigbus ? VM_FAULT_SIGBUS : VM_FAULT_RETRY;
+	return VM_FAULT_RETRY;
 
 out_segv:
 	trace_spf_vma_access(_RET_IP_, vmf.vma, address);

@@ -156,8 +156,8 @@ static int create_pnp_modalias(struct acpi_device *acpi_dev, char *modalias,
 		return 0;
 
 	len = snprintf(modalias, size, "acpi:");
-	if (len >= size)
-		return -ENOMEM;
+	if (len <= 0)
+		return len;
 
 	size -= len;
 
@@ -210,10 +210,8 @@ static int create_of_modalias(struct acpi_device *acpi_dev, char *modalias,
 	len = snprintf(modalias, size, "of:N%sT", (char *)buf.pointer);
 	ACPI_FREE(buf.pointer);
 
-	if (len >= size)
-		return -ENOMEM;
-
-	size -= len;
+	if (len <= 0)
+		return len;
 
 	of_compatible = acpi_dev->data.of_compatible;
 	if (of_compatible->type == ACPI_TYPE_PACKAGE) {

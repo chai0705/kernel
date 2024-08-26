@@ -4,11 +4,9 @@
  */
 
 #include <dt-bindings/clock/rk3588-cru.h>
-#include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/phy/phy.h>
-#include <dt-bindings/pinctrl/rockchip.h>
 #include <dt-bindings/power/rk3588-power.h>
 #include <dt-bindings/soc/rockchip,boot-mode.h>
 #include <dt-bindings/soc/rockchip-system-status.h>
@@ -707,8 +705,8 @@
 		rockchip,reboot-freq = <1416000>;		/* KHz */
 
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
-		rockchip,low-temp-min-volt = <800000>;
+		rockchip,low-temp = <10000>;
+		rockchip,low-temp-min-volt = <750000>;
 		rockchip,high-temp = <85000>;
 		rockchip,high-temp-max-freq = <1608000>;
 
@@ -972,8 +970,8 @@
 		rockchip,reboot-freq = <1800000>;		/* KHz */
 
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
-		rockchip,low-temp-min-volt = <800000>;
+		rockchip,low-temp = <10000>;
+		rockchip,low-temp-min-volt = <750000>;
 		rockchip,high-temp = <85000>;
 		rockchip,high-temp-max-freq = <2208000>;
 
@@ -1305,8 +1303,8 @@
 		rockchip,reboot-freq = <1800000>;		/* KHz */
 
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
-		rockchip,low-temp-min-volt = <800000>;
+		rockchip,low-temp = <10000>;
+		rockchip,low-temp-min-volt = <750000>;
 		rockchip,high-temp = <85000>;
 		rockchip,high-temp-max-freq = <2208000>;
 
@@ -1771,7 +1769,7 @@
 			58	254	3
 		>;
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
+		rockchip,low-temp = <10000>;
 		rockchip,low-temp-min-volt = <750000>;
 
 		/* RK3588 dmc OPPs */
@@ -2379,7 +2377,7 @@
 		intermediate-threshold-freq = <400000>;	/* KHz */
 
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
+		rockchip,low-temp = <10000>;
 		rockchip,low-temp-min-volt = <750000>;
 		rockchip,high-temp = <85000>;
 		rockchip,high-temp-max-freq = <800000>;
@@ -3472,7 +3470,7 @@
 		rockchip,init-freq = <1000000>;		/* KHz */
 
 		rockchip,temp-hysteresis = <5000>;
-		rockchip,low-temp = <15000>;
+		rockchip,low-temp = <10000>;
 		rockchip,low-temp-min-volt = <750000>;
 		rockchip,high-temp = <85000>;
 		rockchip,high-temp-max-freq = <800000>;
@@ -5082,7 +5080,6 @@
 		phy-names = "dp";
 		power-domains = <&power RK3588_PD_VO1>;
 		rockchip,grf = <&vo1_grf>;
-		#sound-dai-cells = <1>;
 		status = "disabled";
 
 		ports {
@@ -5568,6 +5565,8 @@
 		interrupts = <GIC_SPI 206 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&cru SCLK_SFC>, <&cru HCLK_SFC>;
 		clock-names = "clk_sfc", "hclk_sfc";
+		assigned-clocks = <&cru SCLK_SFC>;
+		assigned-clock-rates = <100000000>;
 		#address-cells = <1>;
 		#size-cells = <0>;
 		status = "disabled";
@@ -5658,7 +5657,6 @@
 		resets = <&cru SRST_M_I2S0_8CH_TX>, <&cru SRST_M_I2S0_8CH_RX>;
 		reset-names = "tx-m", "rx-m";
 		rockchip,clk-trcm = <1>;
-		i2s-lrck-gpio = <&gpio1 RK_PC5 GPIO_ACTIVE_HIGH>; /* i2s0_lrck */
 		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <&i2s0_sdi0
 			     &i2s0_sdi1
@@ -5684,7 +5682,6 @@
 		resets = <&cru SRST_M_I2S1_8CH_TX>, <&cru SRST_M_I2S1_8CH_RX>;
 		reset-names = "tx-m", "rx-m";
 		rockchip,clk-trcm = <1>;
-		i2s-lrck-gpio = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>; /* i2s1m0_lrck */
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s1m0_lrck
 			     &i2s1m0_sclk
@@ -6047,7 +6044,7 @@
 		clocks = <&cru TCLK_WDT0>, <&cru PCLK_WDT0>;
 		clock-names = "tclk", "pclk";
 		interrupts = <GIC_SPI 315 IRQ_TYPE_LEVEL_HIGH>;
-		status = "disabled";
+		status = "okay";
 	};
 
 	spi0: spi@feb00000 {
@@ -6344,7 +6341,7 @@
 		interrupts = <GIC_SPI 350 IRQ_TYPE_LEVEL_HIGH>;
 		#pwm-cells = <3>;
 		pinctrl-names = "active";
-		pinctrl-0 = <&pwm12m0_pins>;
+		pinctrl-0 = <&pwm12m1_pins>;
 		clocks = <&cru CLK_PWM3>, <&cru PCLK_PWM3>;
 		clock-names = "pwm", "pclk";
 		status = "disabled";

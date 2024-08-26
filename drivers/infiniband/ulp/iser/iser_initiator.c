@@ -602,10 +602,7 @@ iser_inv_desc(struct iser_fr_desc *desc, u32 rkey)
 		return -EINVAL;
 	}
 
-	if (desc->sig_protected)
-		desc->rsc.sig_mr->need_inval = false;
-	else
-		desc->rsc.mr->need_inval = false;
+	desc->rsc.mr_valid = 0;
 
 	return 0;
 }

@@ -26,7 +26,7 @@
  *          3. add update file cal checksum.
  *                          By Andrew, 2012/12/12
  *      V1.6: 
- *          1. replace guitar_client with gtp_i2c_connect_client;
+ *          1. replace guitar_client with i2c_connect_client;
  *          2. support firmware header array update.
  *                          By Meta, 2013/03/11
  *      V2.2:
@@ -106,21 +106,21 @@ typedef struct
     u32 fw_burned_len;
 }st_update_msg;
 
-static st_update_msg update_msg;
-static u16 show_len;
-static u16 total_len;
-//static u8 got_file_flag = 0;  
-static u8 searching_file = 0;
+st_update_msg update_msg;
+u16 show_len;
+u16 total_len;
+u8 got_file_flag = 0;  
+u8 searching_file = 0;
 
-//extern u8 config[GTP_CONFIG_MAX_LENGTH + GTP_ADDR_LENGTH];
-//extern void gtp_reset_guitar(struct i2c_client *client, s32 ms);
-//extern s32  gtp_send_cfg(struct i2c_client *client);
-//extern s32 gtp_read_version(struct i2c_client *, u16* );
-//extern struct i2c_client * gtp_i2c_connect_client;
-//extern void gtp_irq_enable(struct goodix_ts_data *ts);
-//extern void gtp_irq_disable(struct goodix_ts_data *ts);
-//extern s32 gtp_i2c_read_dbl_check(struct i2c_client *, u16, u8 *, int);
-//static u8 gup_burn_fw_gwake_section(struct i2c_client *client, u8 *fw_section, u16 start_addr, u32 len, u8 bank_cmd );
+extern u8 config[GTP_CONFIG_MAX_LENGTH + GTP_ADDR_LENGTH];
+extern void gtp_reset_guitar(struct i2c_client *client, s32 ms);
+extern s32  gtp_send_cfg(struct i2c_client *client);
+extern s32 gtp_read_version(struct i2c_client *, u16* );
+extern struct i2c_client * i2c_connect_client;
+extern void gtp_irq_enable(struct goodix_ts_data *ts);
+extern void gtp_irq_disable(struct goodix_ts_data *ts);
+extern s32 gtp_i2c_read_dbl_check(struct i2c_client *, u16, u8 *, int);
+static u8 gup_burn_fw_gwake_section(struct i2c_client *client, u8 *fw_section, u16 start_addr, u32 len, u8 bank_cmd );
 
 #define _CLOSE_FILE(p_file) if (p_file && !IS_ERR(p_file)) \
                             { \
@@ -132,7 +132,7 @@ extern void gtp_esd_switch(struct i2c_client *, s32);
 #endif
 
 #if GTP_COMPATIBLE_MODE
-s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode);
+s32 gup_fw_download_proc(void *dir, u8 dwn_mode);
 #endif
 /*******************************************************
 Function:
@@ -146,7 +146,7 @@ Output:
     numbers of i2c_msgs to transfer: 
       2: succeed, otherwise: failed
 *********************************************************/
-static s32 gup_i2c_read(struct i2c_client *client, u8 *buf, s32 len)
+s32 gup_i2c_read(struct i2c_client *client, u8 *buf, s32 len)
 {
     struct i2c_msg msgs[2];
     s32 ret=-1;
@@ -192,7 +192,7 @@ Output:
     numbers of i2c_msgs to transfer: 
         1: succeed, otherwise: failed
 *********************************************************/
-static s32 gup_i2c_write(struct i2c_client *client,u8 *buf,s32 len)
+s32 gup_i2c_write(struct i2c_client *client,u8 *buf,s32 len)
 {
     struct i2c_msg msg;
     s32 ret=-1;
@@ -218,7 +218,6 @@ static s32 gup_i2c_write(struct i2c_client *client,u8 *buf,s32 len)
     return ret;
 }
 
-#if 0
 static s32 gup_init_panel(struct goodix_ts_data *ts)
 {
     s32 ret = 0;
@@ -330,7 +329,6 @@ static s32 gup_init_panel(struct goodix_ts_data *ts)
     msleep(10);
     return 0;
 }
-#endif
 
 
 static u8 gup_get_ic_msg(struct i2c_client *client, u16 addr, u8* msg, s32 len)
@@ -383,7 +381,6 @@ static u8 gup_set_ic_msg(struct i2c_client *client, u16 addr, u8 val)
     return SUCCESS;
 }
 
-#if 0
 static u8 gup_get_ic_fw_msg(struct i2c_client *client)
 {
     s32 ret = -1;
@@ -465,7 +462,7 @@ static u8 gup_get_ic_fw_msg(struct i2c_client *client)
     return SUCCESS;
 }
 
-static s32 gup_enter_update_mode(struct i2c_client *client)
+s32 gup_enter_update_mode(struct i2c_client *client)
 {
     s32 ret = -1;
     s32 retry = 0;
@@ -522,14 +519,14 @@ static s32 gup_enter_update_mode(struct i2c_client *client)
     return ret;
 }
 
-static void gup_leave_update_mode(struct goodix_ts_data *ts)
+void gup_leave_update_mode(struct goodix_ts_data *ts)
 {
     gpio_direction_input(ts->irq_pin);
     //s3c_gpio_setpull(pin, S3C_GPIO_PULL_NONE);
     //s3c_gpio_cfgpin(pin, GTP_INT_CFG);
     
     GTP_DEBUG("[leave_update_mode]reset chip.");
-    gtp_reset_guitar(gtp_i2c_connect_client, 20);
+    gtp_reset_guitar(i2c_connect_client, 20);
 }
 
 // Get the correct nvram data
@@ -649,7 +646,6 @@ static u8 gup_enter_update_judge(st_fw_head *fw_head)
 
     return FAIL;
 }
-#endif
 
 
 
@@ -873,7 +869,6 @@ static void gup_search_file(s32 search_type)
 #endif
 
 
-#if 0
 static u8 gup_check_update_file(struct i2c_client *client, st_fw_head* fw_head, u8* path)
 {
     s32 ret = 0;
@@ -929,7 +924,7 @@ static u8 gup_check_update_file(struct i2c_client *client, st_fw_head* fw_head, 
         gup_search_file(AUTO_SEARCH_BIN | AUTO_SEARCH_CFG);
         if (got_file_flag & CFG_FILE_READY)
         {
-            ret = gup_update_config(gtp_i2c_connect_client);
+            ret = gup_update_config(i2c_connect_client);
             if(ret <= 0)
             {
                 GTP_ERROR("Update config failed.");
@@ -2276,7 +2271,7 @@ exit_burn_fw_finish:
     }
     return FAIL;
 }
-static s32 gup_update_proc(void *dir)
+s32 gup_update_proc(void *dir)
 {
     s32 ret = 0;
     s32 update_ret = FAIL;
@@ -2286,7 +2281,7 @@ static s32 gup_update_proc(void *dir)
     
     GTP_DEBUG("[update_proc]Begin update ......");
     
-    ts = i2c_get_clientdata(gtp_i2c_connect_client);
+    ts = i2c_get_clientdata(i2c_connect_client);
     
 #if GTP_AUTO_UPDATE
     if (searching_file)
@@ -2307,19 +2302,19 @@ static s32 gup_update_proc(void *dir)
 #if GTP_COMPATIBLE_MODE
     if (CHIP_TYPE_GT9F == ts->chip_type)
     {
-        return gtp_gup_fw_download_proc(dir, GTP_FL_FW_BURN);
+        return gup_fw_download_proc(dir, GTP_FL_FW_BURN);
     }
 #endif
 
     update_msg.file = NULL;
-    ret = gup_check_update_file(gtp_i2c_connect_client, &fw_head, (u8*)dir);     //20121211
+    ret = gup_check_update_file(i2c_connect_client, &fw_head, (u8*)dir);     //20121211
     if(FAIL == ret)
     {
         GTP_ERROR("[update_proc]check update file fail.");
         goto file_fail;
     }
     
-    ret = gup_get_ic_fw_msg(gtp_i2c_connect_client);
+    ret = gup_get_ic_fw_msg(i2c_connect_client);
     if(FAIL == ret)
     {
         GTP_ERROR("[update_proc]get ic message fail.");
@@ -2338,7 +2333,7 @@ static s32 gup_update_proc(void *dir)
 #if GTP_ESD_PROTECT
     gtp_esd_switch(ts->client, SWITCH_OFF);
 #endif
-    ret = gup_enter_update_mode(gtp_i2c_connect_client);
+    ret = gup_enter_update_mode(i2c_connect_client);
     if(FAIL == ret)
     {
          GTP_ERROR("[update_proc]enter update mode fail.");
@@ -2350,7 +2345,7 @@ static s32 gup_update_proc(void *dir)
         show_len = 10;
         total_len = 100;
         update_msg.fw_burned_len = 0;
-        ret = gup_burn_dsp_isp(gtp_i2c_connect_client);
+        ret = gup_burn_dsp_isp(i2c_connect_client);
         if(FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn dsp isp fail.");
@@ -2358,7 +2353,7 @@ static s32 gup_update_proc(void *dir)
         }
         
         show_len = 20;
-        ret = gup_burn_fw_ss51(gtp_i2c_connect_client);
+        ret = gup_burn_fw_ss51(i2c_connect_client);
         if(FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn ss51 firmware fail.");
@@ -2366,7 +2361,7 @@ static s32 gup_update_proc(void *dir)
         }
         
         show_len = 30;
-        ret = gup_burn_fw_dsp(gtp_i2c_connect_client);
+        ret = gup_burn_fw_dsp(i2c_connect_client);
         if(FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn dsp firmware fail.");
@@ -2374,7 +2369,7 @@ static s32 gup_update_proc(void *dir)
         }
         
         show_len = 40;
-        ret = gup_burn_fw_boot(gtp_i2c_connect_client);
+        ret = gup_burn_fw_boot(i2c_connect_client);
         if(FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn bootloader firmware fail.");
@@ -2382,7 +2377,7 @@ static s32 gup_update_proc(void *dir)
         }
         show_len = 50;
         
-        ret = gup_burn_fw_boot_isp(gtp_i2c_connect_client);
+        ret = gup_burn_fw_boot_isp(i2c_connect_client);
         if (FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn boot_isp firmware fail.");
@@ -2390,7 +2385,7 @@ static s32 gup_update_proc(void *dir)
         }
         
         show_len = 60;
-        ret = gup_burn_fw_link(gtp_i2c_connect_client);
+        ret = gup_burn_fw_link(i2c_connect_client);
         if (FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn link firmware fail.");
@@ -2398,7 +2393,7 @@ static s32 gup_update_proc(void *dir)
         }
         
         show_len = 70;
-        ret = gup_burn_fw_gwake(gtp_i2c_connect_client);
+        ret = gup_burn_fw_gwake(i2c_connect_client);
         if (FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn app_code firmware fail.");
@@ -2406,7 +2401,7 @@ static s32 gup_update_proc(void *dir)
         }       
         show_len = 80;
         
-        ret = gup_burn_fw_finish(gtp_i2c_connect_client);
+        ret = gup_burn_fw_finish(i2c_connect_client);
         if (FAIL == ret)
         {
             GTP_ERROR("[update_proc]burn finish fail.");
@@ -2444,7 +2439,7 @@ update_fail:
         else
         {
             GTP_DEBUG("[update_proc]send config.");
-            ret = gtp_send_cfg(gtp_i2c_connect_client);
+            ret = gtp_send_cfg(i2c_connect_client);
             if (ret < 0)
             {
                 GTP_ERROR("[update_proc]send config fail.");
@@ -2477,7 +2472,7 @@ file_fail:
         gup_search_file(AUTO_SEARCH_CFG);
         if (got_file_flag & CFG_FILE_READY)
         {
-            ret = gup_update_config(gtp_i2c_connect_client);
+            ret = gup_update_config(i2c_connect_client);
             if(ret <= 0)
             {
                 GTP_ERROR("Update config failed.");
@@ -2500,7 +2495,6 @@ file_fail:
         return FAIL;
     }
 }
-#endif
 
 #if GTP_AUTO_UPDATE
 u8 gup_init_update_proc(struct goodix_ts_data *ts)
@@ -2576,16 +2570,16 @@ u8 gup_init_update_proc(struct goodix_ts_data *ts)
 
 #if GTP_COMPATIBLE_MODE
 
-static u8 i2c_opr_buf[GTP_ADDR_LENGTH + FL_PACK_SIZE] = {0};
-static u8 chk_cmp_buf[FL_PACK_SIZE] = {0};
+u8 i2c_opr_buf[GTP_ADDR_LENGTH + FL_PACK_SIZE] = {0};
+u8 chk_cmp_buf[FL_PACK_SIZE] = {0};
 
-//extern s32 gtp_fw_startup(struct i2c_client *client);
+extern s32 gtp_fw_startup(struct i2c_client *client);
 static u8 gup_download_fw_dsp(struct i2c_client *client, u8 dwn_mode);
 static s32 gup_burn_fw_proc(struct i2c_client *client, u16 start_addr, s32 start_index, s32 burn_len);
 static s32 gup_check_and_repair(struct i2c_client *client, u16 start_addr, s32 start_index, s32 chk_len);
 
 
-u8 gtp_gup_check_fs_mounted(char *path_name)
+u8 gup_check_fs_mounted(char *path_name)
 {
     struct path root_path;
     struct path path;
@@ -2623,7 +2617,7 @@ u8 gtp_gup_check_fs_mounted(char *path_name)
 #endif
 }
 
-s32 gtp_i2c_write_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
+s32 i2c_write_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
 {
     s32 ret = 0;
     s32 write_bytes = 0;
@@ -2664,7 +2658,7 @@ s32 gtp_i2c_write_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
     return 1;
 }
 
-s32 gtp_i2c_read_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
+s32 i2c_read_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
 {
     s32 ret = 0;
     s32 read_bytes = 0;
@@ -2711,11 +2705,11 @@ s32 gtp_i2c_read_bytes(struct i2c_client *client, u16 addr, u8 *buf, s32 len)
 static void gup_bit_write(s32 addr, s32 bit, s32 val)
 {
     u8 buf;
-    gtp_i2c_read_bytes(gtp_i2c_connect_client, addr, &buf, 1);
+    i2c_read_bytes(i2c_connect_client, addr, &buf, 1);
 
     buf = (buf & (~((u8)1 << bit))) | ((u8)val << bit);
 
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, addr, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, addr, &buf, 1);
 }
 
 static void gup_clk_count_init(s32 bCh, s32 bCNT)
@@ -2728,13 +2722,13 @@ static void gup_clk_count_init(s32 bCh, s32 bCNT)
     gup_bit_write(_fRW_MISCTL__MEA, 1, 1);
     //_bRW_MISCTL__MEA_MODE = 0; //Pulse mode
     buf = 0;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__MEA_MODE, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__MEA_MODE, &buf, 1);
     //_bRW_MISCTL__MEA_SRCSEL = 8 + bCh; //From GIO1
     buf = 8 + bCh;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__MEA_SRCSEL, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__MEA_SRCSEL, &buf, 1);
     //_wRW_MISCTL__MEA_MAX_NUM = bCNT; //Set the Measure Counts = 1
     buf = bCNT;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _wRW_MISCTL__MEA_MAX_NUM, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _wRW_MISCTL__MEA_MAX_NUM, &buf, 1);
     //_fRW_MISCTL__MEA_CLR = 0; //Frequency measure not clear
     gup_bit_write(_fRW_MISCTL__MEA, 1, 0);
     //_fRW_MISCTL__MEA_EN = 1;
@@ -2749,7 +2743,7 @@ static u32 gup_clk_count_get(void)
 
     while (ready == 0) //Wait for measurement complete
     {
-        gtp_i2c_read_bytes(gtp_i2c_connect_client, _bRO_MISCTL__MEA_RDY, buf, 1);
+        i2c_read_bytes(i2c_connect_client, _bRO_MISCTL__MEA_RDY, buf, 1);
         ready = buf[0];
     }
 
@@ -2757,7 +2751,7 @@ static u32 gup_clk_count_get(void)
 
     //_fRW_MISCTL__MEA_EN = 0;
     gup_bit_write(_fRW_MISCTL__MEA, 0, 0);
-    gtp_i2c_read_bytes(gtp_i2c_connect_client, _dRO_MISCTL__MEA_VAL, buf, 4);
+    i2c_read_bytes(i2c_connect_client, _dRO_MISCTL__MEA_VAL, buf, 4);
     GTP_DEBUG("Clk_count 0: %2X", buf[0]);
     GTP_DEBUG("Clk_count 1: %2X", buf[1]);
     GTP_DEBUG("Clk_count 2: %2X", buf[2]);
@@ -2767,23 +2761,23 @@ static u32 gup_clk_count_get(void)
     GTP_INFO("Clk_count : %d", temp);
     return temp;
 }
-static u8 gup_clk_dac_setting(int dac)
+u8 gup_clk_dac_setting(int dac)
 {
     s8 buf1, buf2;
     
-    gtp_i2c_read_bytes(gtp_i2c_connect_client, _wRW_MISCTL__RG_DMY, &buf1, 1);
-    gtp_i2c_read_bytes(gtp_i2c_connect_client, _bRW_MISCTL__RG_OSC_CALIB, &buf2, 1);
+    i2c_read_bytes(i2c_connect_client, _wRW_MISCTL__RG_DMY, &buf1, 1);
+    i2c_read_bytes(i2c_connect_client, _bRW_MISCTL__RG_OSC_CALIB, &buf2, 1);
 
     buf1 = (buf1 & 0xFFCF) | ((dac & 0x03) << 4);
     buf2 = (dac >> 2) & 0x3f;
 
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _wRW_MISCTL__RG_DMY, &buf1, 1);
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__RG_OSC_CALIB, &buf2, 1);
+    i2c_write_bytes(i2c_connect_client, _wRW_MISCTL__RG_DMY, &buf1, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__RG_OSC_CALIB, &buf2, 1);
     
     return 0;
 }
 
-static u8 gtp_gup_clk_calibration_pin_select(s32 bCh)
+static u8 gup_clk_calibration_pin_select(s32 bCh)
 {
     s32 i2c_addr;
 
@@ -2828,9 +2822,6 @@ static u8 gtp_gup_clk_calibration_pin_select(s32 bCh)
         case 9:
             i2c_addr = _fRW_MISCTL__GIO9;
             break;
-
-        default:
-            return -1;
     }
 
     gup_bit_write(i2c_addr, 1, 0);
@@ -2838,12 +2829,12 @@ static u8 gtp_gup_clk_calibration_pin_select(s32 bCh)
     return 0;
 }
 
-static void gup_output_pulse(int t)
+void gup_output_pulse(int t)
 {
 	unsigned long flags;
 	struct goodix_ts_data *ts;
 
-	ts = i2c_get_clientdata(gtp_i2c_connect_client);
+	ts = i2c_get_clientdata(i2c_connect_client);
 
 	GTP_GPIO_OUTPUT(ts->irq_pin, 0);
 	msleep(10);
@@ -2870,13 +2861,13 @@ static void gup_sys_clk_init(void)
     gup_bit_write(_rRW_MISCTL__ANA_RXADC_B0_, 5, 0);
     //_bRW_MISCTL__RG_LDO_A18_PWD = 0; //DrvMISCTL_A18_PowerON
     buf = 0;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__RG_LDO_A18_PWD, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__RG_LDO_A18_PWD, &buf, 1);
     //_bRW_MISCTL__RG_BG_PWD = 0; //DrvMISCTL_BG_PowerON
     buf = 0;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__RG_BG_PWD, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__RG_BG_PWD, &buf, 1);
     //_bRW_MISCTL__RG_CLKGEN_PWD = 0; //DrvMISCTL_CLKGEN_PowerON
     buf = 0;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__RG_CLKGEN_PWD, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__RG_CLKGEN_PWD, &buf, 1);
     //_fRW_MISCTL__RG_RXADC_PWD = 0; //DrvMISCTL_RX_ADC_PowerON
     gup_bit_write(_rRW_MISCTL__ANA_RXADC_B0_, 0, 0);
     //_fRW_MISCTL__RG_RXADC_REF_PWD = 0; //DrvMISCTL_RX_ADCREF_PowerON
@@ -2884,26 +2875,37 @@ static void gup_sys_clk_init(void)
     //gup_clk_dac_setting(60);
     //_bRW_MISCTL__OSC_CK_SEL = 1;;
     buf = 1;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _bRW_MISCTL__OSC_CK_SEL, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _bRW_MISCTL__OSC_CK_SEL, &buf, 1);
 }
-
-s32 gtp_gup_clk_calibration(void)
+#include <linux/time64.h>
+struct timeval {
+	long	tv_sec;		/* seconds */
+	long	tv_usec;	/* microseconds */
+};
+void do_gettimeofday(struct timeval *tv)
+{
+	struct timespec64 ts;
+	ktime_get_real_ts64(&ts);
+	tv->tv_sec = ts.tv_sec;
+	tv->tv_usec = ts.tv_nsec;
+}
+s32 gup_clk_calibration(void)
 {
     u8 buf;
     //u8 trigger;
     s32 i;
-    //struct timeval start, end;
+    struct timeval start, end;
     s32 count;
-    //s32 count_ref;
-    //s32 sec;
-    //s32 usec;
+    s32 count_ref;
+    s32 sec;
+    s32 usec;
     //unsigned long flags;
     struct goodix_ts_data *ts;
 
-	ts = i2c_get_clientdata(gtp_i2c_connect_client);
+	ts = i2c_get_clientdata(i2c_connect_client);
 
     buf = 0x0C; // hold ss51 and dsp
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, _rRW_MISCTL__SWRST_B0_, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, _rRW_MISCTL__SWRST_B0_, &buf, 1);
 
     //_fRW_MISCTL__CLK_BIAS = 0; //disable clock bias
     gup_bit_write(_rRW_MISCTL_RG_DMY83, 7, 0);
@@ -2915,12 +2917,12 @@ s32 gtp_gup_clk_calibration(void)
     gup_bit_write(_rRW_MISCTL__GIO1CTL_B1_, 1, 0);
 
     //buf = 0x00;
-    //gtp_i2c_write_bytes(gtp_i2c_connect_client, _rRW_MISCTL__SWRST_B0_, &buf, 1);
+    //i2c_write_bytes(i2c_connect_client, _rRW_MISCTL__SWRST_B0_, &buf, 1);
     //msleep(1000);
 
     GTP_INFO("CLK calibration GO");
     gup_sys_clk_init();
-    gtp_gup_clk_calibration_pin_select(1);//use GIO1 to do the calibration
+    gup_clk_calibration_pin_select(1);//use GIO1 to do the calibration
 
 	GTP_GPIO_OUTPUT(ts->irq_pin, 0);
  
@@ -2937,7 +2939,7 @@ s32 gtp_gup_clk_calibration(void)
         gup_clk_dac_setting(i);
         gup_clk_count_init(1, CLK_AVG_TIME);
 
-    #if 1
+    #if 0
         gup_output_pulse(PULSE_LENGTH);
         count = gup_clk_count_get();
   
@@ -2984,24 +2986,24 @@ s32 gtp_gup_clk_calibration(void)
 
     //clk_dac = i;
 
-    gtp_reset_guitar(gtp_i2c_connect_client, 20);
+    gtp_reset_guitar(i2c_connect_client, 20);
 
 #if 0//for debug
     //-- ouput clk to GPIO 4
     buf = 0x00;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x41FA, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x41FA, &buf, 1);
     buf = 0x00;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x4104, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x4104, &buf, 1);
     buf = 0x00;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x4105, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x4105, &buf, 1);
     buf = 0x00;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x4106, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x4106, &buf, 1);
     buf = 0x01;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x4107, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x4107, &buf, 1);
     buf = 0x06;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x41F8, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x41F8, &buf, 1);
     buf = 0x02;
-    gtp_i2c_write_bytes(gtp_i2c_connect_client, 0x41F9, &buf, 1);
+    i2c_write_bytes(i2c_connect_client, 0x41F9, &buf, 1);
 #endif
 
 	/*GTP_GPIO_AS_INT(ts->irq_pin);*/
@@ -3011,7 +3013,7 @@ s32 gtp_gup_clk_calibration(void)
 
 
 
-static s32 gup_hold_ss51_dsp(struct i2c_client *client)
+s32 gup_hold_ss51_dsp(struct i2c_client *client)
 {
     s32 ret = -1;
     s32 retry = 0;
@@ -3092,7 +3094,7 @@ static s32 gup_hold_ss51_dsp(struct i2c_client *client)
     return SUCCESS;
 }
 
-static s32 gup_enter_update_mode_fl(struct i2c_client *client)
+s32 gup_enter_update_mode_fl(struct i2c_client *client)
 {
     s32 ret = -1;
     //s32 retry = 0;
@@ -3224,7 +3226,7 @@ static s32 gup_burn_fw_proc(struct i2c_client *client, u16 start_addr, s32 start
     
     GTP_DEBUG("burn firmware: 0x%04X, %d bytes, start_index: 0x%04X", start_addr, burn_len, start_index);
     
-    ret = gtp_i2c_write_bytes(client, start_addr, (u8*)&gtp_default_FW_fl[FW_HEAD_LENGTH + start_index], burn_len);
+    ret = i2c_write_bytes(client, start_addr, (u8*)&gtp_default_FW_fl[FW_HEAD_LENGTH + start_index], burn_len);
     if (ret < 0)
     {
         GTP_ERROR("burn 0x%04X, %d bytes failed!", start_addr, burn_len);
@@ -3257,7 +3259,7 @@ static s32 gup_check_and_repair(struct i2c_client *client, u16 start_addr, s32 s
 			GTP_ERROR("Check failed, buffer overflow\n");
 			break;
 		}
-        ret = gtp_i2c_read_bytes(client, cmp_addr, chk_cmp_buf, cmp_len);
+        ret = i2c_read_bytes(client, cmp_addr, chk_cmp_buf, cmp_len);
         if (ret < 0)
         {
             chk_fail = 1;
@@ -3268,7 +3270,7 @@ static s32 gup_check_and_repair(struct i2c_client *client, u16 start_addr, s32 s
             if (chk_cmp_buf[i] != gtp_default_FW_fl[FW_HEAD_LENGTH + start_index +i])
             {
                 chk_fail = 1;
-                gtp_i2c_write_bytes(client, cmp_addr+i, &gtp_default_FW_fl[FW_HEAD_LENGTH + start_index + i], cmp_len-i);
+                i2c_write_bytes(client, cmp_addr+i, &gtp_default_FW_fl[FW_HEAD_LENGTH + start_index + i], cmp_len-i);
                 GTP_ERROR("Check failed index: %d(%d != %d), redownload chuck", i, chk_cmp_buf[i], 
                         gtp_default_FW_fl[FW_HEAD_LENGTH + start_index +i]);
                 break;
@@ -3382,7 +3384,7 @@ static s32 gup_prepare_fl_fw(char *path, st_fw_head *fw_head)
     s32 ret = 0;
     s32 i = 0;
     s32 timeout = 0;
-    struct goodix_ts_data *ts = i2c_get_clientdata(gtp_i2c_connect_client);
+    struct goodix_ts_data *ts = i2c_get_clientdata(i2c_connect_client);
     
     if (!memcmp(path, "update", 6))
     {
@@ -3521,14 +3523,14 @@ static u8 gup_check_update_file_fl(struct i2c_client *client, st_fw_head* fw_hea
     return ret;
 }
 
-s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode)
+s32 gup_fw_download_proc(void *dir, u8 dwn_mode)
 {
     s32 ret = 0;
     u8  retry = 0;
     st_fw_head fw_head;
     struct goodix_ts_data *ts;
     
-    ts = i2c_get_clientdata(gtp_i2c_connect_client);
+    ts = i2c_get_clientdata(i2c_connect_client);
     if (NULL == dir)
     {
         if(GTP_FL_FW_BURN == dwn_mode)       // GT9XXF firmware burn mode
@@ -3552,7 +3554,7 @@ s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode)
     total_len = 100;
     show_len = 0;
     
-    ret = gup_check_update_file_fl(gtp_i2c_connect_client, &fw_head, (char *)dir);
+    ret = gup_check_update_file_fl(i2c_connect_client, &fw_head, (char *)dir);
     show_len = 10;
     
     if (FAIL == ret)
@@ -3579,7 +3581,7 @@ s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode)
 #endif
     }
     
-    ret = gup_enter_update_mode_fl(gtp_i2c_connect_client);
+    ret = gup_enter_update_mode_fl(i2c_connect_client);
     show_len = 20;
     if (FAIL == ret)
     {
@@ -3589,7 +3591,7 @@ s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode)
 
     while (retry++ < 5)
     {
-        ret = gup_download_fw_ss51(gtp_i2c_connect_client, dwn_mode);
+        ret = gup_download_fw_ss51(i2c_connect_client, dwn_mode);
         show_len = 60;
         if (FAIL == ret)
         {
@@ -3597,7 +3599,7 @@ s32 gtp_gup_fw_download_proc(void *dir, u8 dwn_mode)
             continue;
         }
 
-        ret = gup_download_fw_dsp(gtp_i2c_connect_client, dwn_mode);
+        ret = gup_download_fw_dsp(i2c_connect_client, dwn_mode);
         show_len = 80;
         if (FAIL == ret)
         {

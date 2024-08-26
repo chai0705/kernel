@@ -594,14 +594,10 @@ int rkisp_csi_config_patch(struct rkisp_device *dev)
 			if (dev->hdr.op_mode == HDR_NORMAL || dev->hdr.op_mode == HDR_COMPR)
 				dev->hdr.op_mode = HDR_RDBK_FRAME1;
 
-			if (dev->isp_inp == INP_CIF && dev->isp_ver > ISP_V21) {
-				/* read back mode default if more sensor link to isp */
-				if (!dev->hw_dev->is_single)
-					dev->is_rdbk_auto = true;
+			if (dev->isp_inp == INP_CIF && dev->isp_ver > ISP_V21)
 				mode.rdbk_mode = dev->is_rdbk_auto ? RKISP_VICAP_RDBK_AUTO : RKISP_VICAP_ONLINE;
-			} else {
+			else
 				mode.rdbk_mode = RKISP_VICAP_RDBK_AIQ;
-			}
 			v4l2_subdev_call(mipi_sensor, core, ioctl, RKISP_VICAP_CMD_MODE, &mode);
 			dev->vicap_in = mode.input;
 			/* vicap direct to isp */

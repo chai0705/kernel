@@ -217,23 +217,6 @@ fail:
 		asm volatile("hlt\n");
 }
 
-static enum es_result vc_insn_string_check(struct es_em_ctxt *ctxt,
-					   unsigned long address,
-					   bool write)
-{
-	if (user_mode(ctxt->regs) && fault_in_kernel_space(address)) {
-		ctxt->fi.vector     = X86_TRAP_PF;
-		ctxt->fi.error_code = X86_PF_USER;
-		ctxt->fi.cr2        = address;
-		if (write)
-			ctxt->fi.error_code |= X86_PF_WRITE;
-
-		return ES_EXCEPTION;
-	}
-
-	return ES_OK;
-}
-
 static enum es_result vc_insn_string_read(struct es_em_ctxt *ctxt,
 					  void *src, char *buf,
 					  unsigned int data_size,
@@ -241,12 +224,7 @@ static enum es_result vc_insn_string_read(struct es_em_ctxt *ctxt,
 					  bool backwards)
 {
 	int i, b = backwards ? -1 : 1;
-	unsigned long address = (unsigned long)src;
-	enum es_result ret;
-
-	ret = vc_insn_string_check(ctxt, address, false);
-	if (ret != ES_OK)
-		return ret;
+	enum es_result ret = ES_OK;
 
 	for (i = 0; i < count; i++) {
 		void *s = src + (i * data_size * b);
@@ -267,12 +245,7 @@ static enum es_result vc_insn_string_write(struct es_em_ctxt *ctxt,
 					   bool backwards)
 {
 	int i, s = backwards ? -1 : 1;
-	unsigned long address = (unsigned long)dst;
-	enum es_result ret;
-
-	ret = vc_insn_string_check(ctxt, address, true);
-	if (ret != ES_OK)
-		return ret;
+	enum es_result ret = ES_OK;
 
 	for (i = 0; i < count; i++) {
 		void *d = dst + (i * data_size * s);
@@ -308,9 +281,6 @@ static enum es_result vc_insn_string_write(struct es_em_ctxt *ctxt,
 static enum es_result vc_ioio_exitinfo(struct es_em_ctxt *ctxt, u64 *exitinfo)
 {
 	struct insn *insn = &ctxt->insn;
-	size_t size;
-	u64 port;
-
 	*exitinfo = 0;
 
 	switch (insn->opcode.bytes[0]) {
@@ -319,7 +289,7 @@ static enum es_result vc_ioio_exitinfo(struct es_em_ctxt *ctxt, u64 *exitinfo)
 	case 0x6d:
 		*exitinfo |= IOIO_TYPE_INS;
 		*exitinfo |= IOIO_SEG_ES;
-		port	   = ctxt->regs->dx & 0xffff;
+		*exitinfo |= (ctxt->regs->dx & 0xffff) << 16;
 		break;
 
 	/* OUTS opcodes */
@@ -327,42 +297,40 @@ static enum es_result vc_ioio_exitinfo(struct es_em_ctxt *ctxt, u64 *exitinfo)
 	case 0x6f:
 		*exitinfo |= IOIO_TYPE_OUTS;
 		*exitinfo |= IOIO_SEG_DS;
-		port	   = ctxt->regs->dx & 0xffff;
+		*exitinfo |= (ctxt->regs->dx & 0xffff) << 16;
 		break;
 
 	/* IN immediate opcodes */
 	case 0xe4:
 	case 0xe5:
 		*exitinfo |= IOIO_TYPE_IN;
-		port	   = (u8)insn->immediate.value & 0xffff;
+		*exitinfo |= (u8)insn->immediate.value << 16;
 		break;
 
 	/* OUT immediate opcodes */
 	case 0xe6:
 	case 0xe7:
 		*exitinfo |= IOIO_TYPE_OUT;
-		port	   = (u8)insn->immediate.value & 0xffff;
+		*exitinfo |= (u8)insn->immediate.value << 16;
 		break;
 
 	/* IN register opcodes */
 	case 0xec:
 	case 0xed:
 		*exitinfo |= IOIO_TYPE_IN;
-		port	   = ctxt->regs->dx & 0xffff;
+		*exitinfo |= (ctxt->regs->dx & 0xffff) << 16;
 		break;
 
 	/* OUT register opcodes */
 	case 0xee:
 	case 0xef:
 		*exitinfo |= IOIO_TYPE_OUT;
-		port	   = ctxt->regs->dx & 0xffff;
+		*exitinfo |= (ctxt->regs->dx & 0xffff) << 16;
 		break;
 
 	default:
 		return ES_DECODE_FAILED;
 	}
-
-	*exitinfo |= port << 16;
 
 	switch (insn->opcode.bytes[0]) {
 	case 0x6c:
@@ -373,15 +341,12 @@ static enum es_result vc_ioio_exitinfo(struct es_em_ctxt *ctxt, u64 *exitinfo)
 	case 0xee:
 		/* Single byte opcodes */
 		*exitinfo |= IOIO_DATA_8;
-		size       = 1;
 		break;
 	default:
 		/* Length determined by instruction parsing */
 		*exitinfo |= (insn->opnd_bytes == 2) ? IOIO_DATA_16
 						     : IOIO_DATA_32;
-		size       = (insn->opnd_bytes == 2) ? 2 : 4;
 	}
-
 	switch (insn->addr_bytes) {
 	case 2:
 		*exitinfo |= IOIO_ADDR_16;
@@ -397,7 +362,7 @@ static enum es_result vc_ioio_exitinfo(struct es_em_ctxt *ctxt, u64 *exitinfo)
 	if (insn_has_rep_prefix(insn))
 		*exitinfo |= IOIO_REP;
 
-	return vc_ioio_check(ctxt, (u16)port, size);
+	return ES_OK;
 }
 
 static enum es_result vc_handle_ioio(struct ghcb *ghcb, struct es_em_ctxt *ctxt)

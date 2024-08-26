@@ -27,8 +27,8 @@
 #define CSI2_NUM_PADS_SINGLE_LINK	2
 #define MAX_CSI2_SENSORS		2
 
-#define RKCIF_DEFAULT_WIDTH	64
-#define RKCIF_DEFAULT_HEIGHT	48
+#define RKCIF_DEFAULT_WIDTH	640
+#define RKCIF_DEFAULT_HEIGHT	480
 
 #define CSI_ERRSTR_LEN		(256)
 #define CSI_VCINFO_LEN		(12)
@@ -94,7 +94,6 @@ enum rkcsi2_chip_id {
 	CHIP_RK3588_CSI2,
 	CHIP_RV1106_CSI2,
 	CHIP_RK3562_CSI2,
-	CHIP_RK3576_CSI2,
 };
 
 enum csi2_pads {
@@ -172,7 +171,6 @@ struct csi2_dev {
 	int			dsi_input_en;
 	struct rkcif_csi_info	csi_info;
 	const char		*dev_name;
-	int			sw_dbg;
 };
 
 struct csi2_hw {

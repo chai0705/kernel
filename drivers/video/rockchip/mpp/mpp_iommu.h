@@ -68,8 +68,7 @@ struct mpp_rk_iommu {
 struct mpp_dev;
 
 struct mpp_iommu_info {
-	struct rw_semaphore *rw_sem;
-	struct rw_semaphore rw_sem_self;
+	struct rw_semaphore rw_sem;
 
 	struct device *dev;
 	struct platform_device *pdev;
@@ -127,7 +126,7 @@ int mpp_iommu_dev_deactivate(struct mpp_iommu_info *info, struct mpp_dev *dev);
 static inline int mpp_iommu_down_read(struct mpp_iommu_info *info)
 {
 	if (info)
-		down_read(info->rw_sem);
+		down_read(&info->rw_sem);
 
 	return 0;
 }
@@ -135,7 +134,7 @@ static inline int mpp_iommu_down_read(struct mpp_iommu_info *info)
 static inline int mpp_iommu_up_read(struct mpp_iommu_info *info)
 {
 	if (info)
-		up_read(info->rw_sem);
+		up_read(&info->rw_sem);
 
 	return 0;
 }
@@ -143,7 +142,7 @@ static inline int mpp_iommu_up_read(struct mpp_iommu_info *info)
 static inline int mpp_iommu_down_write(struct mpp_iommu_info *info)
 {
 	if (info)
-		down_write(info->rw_sem);
+		down_write(&info->rw_sem);
 
 	return 0;
 }
@@ -151,7 +150,7 @@ static inline int mpp_iommu_down_write(struct mpp_iommu_info *info)
 static inline int mpp_iommu_up_write(struct mpp_iommu_info *info)
 {
 	if (info)
-		up_write(info->rw_sem);
+		up_write(&info->rw_sem);
 
 	return 0;
 }

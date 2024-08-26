@@ -129,7 +129,6 @@ struct regval {
 };
 
 struct ov5670_mode {
-	u32 bus_fmt;
 	u32 width;
 	u32 height;
 	struct v4l2_fract max_fps;
@@ -173,8 +172,6 @@ struct ov5670 {
 	const char		*module_name;
 	const char		*len_name;
 	struct rkmodule_awb_cfg	awb_cfg;
-	struct v4l2_fract	cur_fps;
-	u32			cur_vts;
 };
 
 #define to_ov5670(sd) container_of(sd, struct ov5670, subdev)
@@ -633,7 +630,6 @@ static const struct regval ov5670_1296x960_regs_2lane[] = {
 
 static const struct ov5670_mode supported_modes_2lane[] = {
 	{
-		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.width = 2592,
 		.height = 1944,
 		.max_fps = {
@@ -646,7 +642,6 @@ static const struct ov5670_mode supported_modes_2lane[] = {
 		.reg_list = ov5670_2592x1944_regs_2lane,
 	},
 	{
-		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.width = 1296,
 		.height = 960,
 		.max_fps = {
@@ -661,10 +656,6 @@ static const struct ov5670_mode supported_modes_2lane[] = {
 };
 
 static const struct ov5670_mode *supported_modes;
-
-static const u32 bus_code[] = {
-	MEDIA_BUS_FMT_SBGGR10_1X10,
-};
 
 static const s64 link_freq_menu_items[] = {
 	MIPI_FREQ
@@ -824,7 +815,7 @@ static int ov5670_set_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov5670->mutex);
 
 	mode = ov5670_find_best_fit(ov5670, fmt);
-	fmt->format.code = mode->bus_fmt;
+	fmt->format.code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	fmt->format.width = mode->width;
 	fmt->format.height = mode->height;
 	fmt->format.field = V4L2_FIELD_NONE;
@@ -844,7 +835,6 @@ static int ov5670_set_fmt(struct v4l2_subdev *sd,
 		__v4l2_ctrl_modify_range(ov5670->vblank, vblank_def,
 					 OV5670_VTS_MAX - mode->height,
 					 1, vblank_def);
-		ov5670->cur_fps = mode->max_fps;
 	}
 
 	mutex_unlock(&ov5670->mutex);
@@ -870,7 +860,7 @@ static int ov5670_get_fmt(struct v4l2_subdev *sd,
 	} else {
 		fmt->format.width = mode->width;
 		fmt->format.height = mode->height;
-		fmt->format.code = mode->bus_fmt;
+		fmt->format.code = MEDIA_BUS_FMT_SBGGR10_1X10;
 		fmt->format.field = V4L2_FIELD_NONE;
 	}
 	mutex_unlock(&ov5670->mutex);
@@ -882,9 +872,9 @@ static int ov5670_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_pad_config *cfg,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index >= ARRAY_SIZE(bus_code))
+	if (code->index != 0)
 		return -EINVAL;
-	code->code = bus_code[code->index];
+	code->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 
 	return 0;
 }
@@ -898,7 +888,7 @@ static int ov5670_enum_frame_sizes(struct v4l2_subdev *sd,
 	if (fse->index >= ov5670->cfg_num)
 		return -EINVAL;
 
-	if (fse->code != supported_modes[fse->index].bus_fmt)
+	if (fse->code != MEDIA_BUS_FMT_SBGGR10_1X10)
 		return -EINVAL;
 
 	fse->min_width  = supported_modes[fse->index].width;
@@ -974,72 +964,10 @@ static int ov5670_g_frame_interval(struct v4l2_subdev *sd,
 	struct ov5670 *ov5670 = to_ov5670(sd);
 	const struct ov5670_mode *mode = ov5670->cur_mode;
 
-	if (ov5670->streaming)
-		fi->interval = ov5670->cur_fps;
-	else
-		fi->interval = mode->max_fps;
+	mutex_lock(&ov5670->mutex);
+	fi->interval = mode->max_fps;
+	mutex_unlock(&ov5670->mutex);
 
-	return 0;
-}
-
-static const struct ov5670_mode *ov5670_find_mode(struct ov5670 *ov5670, int fps)
-{
-	const struct ov5670_mode *mode = NULL;
-	const struct ov5670_mode *match = NULL;
-	int cur_fps = 0;
-	int i = 0;
-
-	for (i = 0; i < ov5670->cfg_num; i++) {
-		mode = &supported_modes[i];
-		if (mode->width == ov5670->cur_mode->width &&
-		    mode->height == ov5670->cur_mode->height &&
-		    mode->bus_fmt == ov5670->cur_mode->bus_fmt) {
-			cur_fps = DIV_ROUND_CLOSEST(mode->max_fps.denominator, mode->max_fps.numerator);
-			if (cur_fps == fps) {
-				match = mode;
-				break;
-			}
-		}
-	}
-	return match;
-}
-
-static int ov5670_s_frame_interval(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_frame_interval *fi)
-{
-	struct ov5670 *ov5670 = to_ov5670(sd);
-	const struct ov5670_mode *mode = NULL;
-	struct v4l2_fract *fract = &fi->interval;
-	s64 h_blank, vblank_def;
-	int fps;
-
-	if (ov5670->streaming)
-		return -EBUSY;
-
-	if (fi->pad != 0)
-		return -EINVAL;
-
-	if (fract->numerator == 0) {
-		v4l2_err(sd, "error param, check interval param\n");
-		return -EINVAL;
-	}
-	fps = DIV_ROUND_CLOSEST(fract->denominator, fract->numerator);
-	mode = ov5670_find_mode(ov5670, fps);
-	if (mode == NULL) {
-		v4l2_err(sd, "couldn't match fi\n");
-		return -EINVAL;
-	}
-
-	ov5670->cur_mode = mode;
-
-	h_blank = mode->hts_def - mode->width;
-	__v4l2_ctrl_modify_range(ov5670->hblank, h_blank,
-				 h_blank, 1, h_blank);
-	vblank_def = mode->vts_def - mode->height;
-	__v4l2_ctrl_modify_range(ov5670->vblank, vblank_def,
-				 OV5670_VTS_MAX - mode->height,
-				 1, vblank_def);
-	ov5670->cur_fps = mode->max_fps;
 	return 0;
 }
 
@@ -1451,7 +1379,7 @@ static int ov5670_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	/* Initialize try_fmt */
 	try_fmt->width = def_mode->width;
 	try_fmt->height = def_mode->height;
-	try_fmt->code = def_mode->bus_fmt;
+	try_fmt->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	try_fmt->field = V4L2_FIELD_NONE;
 
 	mutex_unlock(&ov5670->mutex);
@@ -1470,7 +1398,7 @@ static int ov5670_enum_frame_interval(struct v4l2_subdev *sd,
 	if (fie->index >= ov5670->cfg_num)
 		return -EINVAL;
 
-	fie->code = supported_modes[fie->index].bus_fmt;
+	fie->code = MEDIA_BUS_FMT_SBGGR10_1X10;
 	fie->width = supported_modes[fie->index].width;
 	fie->height = supported_modes[fie->index].height;
 	fie->interval = supported_modes[fie->index].max_fps;
@@ -1513,7 +1441,6 @@ static const struct v4l2_subdev_core_ops ov5670_core_ops = {
 static const struct v4l2_subdev_video_ops ov5670_video_ops = {
 	.s_stream = ov5670_s_stream,
 	.g_frame_interval = ov5670_g_frame_interval,
-	.s_frame_interval = ov5670_s_frame_interval,
 };
 
 static const struct v4l2_subdev_pad_ops ov5670_pad_ops = {
@@ -1530,14 +1457,6 @@ static const struct v4l2_subdev_ops ov5670_subdev_ops = {
 	.video	= &ov5670_video_ops,
 	.pad	= &ov5670_pad_ops,
 };
-
-static void ov5670_modify_fps_info(struct ov5670 *ov5670)
-{
-	const struct ov5670_mode *mode = ov5670->cur_mode;
-
-	ov5670->cur_fps.denominator = mode->max_fps.denominator * mode->vts_def /
-				      ov5670->cur_vts;
-}
 
 static int ov5670_set_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -1598,8 +1517,6 @@ static int ov5670_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = ov5670_write_reg(ov5670->client, OV5670_REG_VTS,
 				       OV5670_REG_VALUE_16BIT,
 				       ctrl->val + ov5670->cur_mode->height);
-		ov5670->cur_vts = ctrl->val + ov5670->cur_mode->height;
-		ov5670_modify_fps_info(ov5670);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = ov5670_enable_test_pattern(ov5670, ctrl->val);

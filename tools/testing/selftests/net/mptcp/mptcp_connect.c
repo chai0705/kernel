@@ -15,7 +15,6 @@
 #include <unistd.h>
 
 #include <sys/poll.h>
-#include <sys/random.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -735,11 +734,15 @@ int main_loop_s(int listensock)
 
 static void init_rng(void)
 {
+	int fd = open("/dev/urandom", O_RDONLY);
 	unsigned int foo;
 
-	if (getrandom(&foo, sizeof(foo), 0) == -1) {
-		perror("getrandom");
-		exit(1);
+	if (fd > 0) {
+		int ret = read(fd, &foo, sizeof(foo));
+
+		if (ret < 0)
+			srand(fd + foo);
+		close(fd);
 	}
 
 	srand(foo);

@@ -9,6 +9,5 @@
 #include <media/v4l2-dev.h>
 
 int rkcif_sditf_disconnect(struct video_device *vdev);
-void rkcif_external_soft_reset(struct video_device *vdev);
 
 #endif

@@ -56,6 +56,11 @@
 
 #define	STMMAC_ALIGN(x)		ALIGN(ALIGN(x, SMP_CACHE_BYTES), 16)
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
+#define RTL_8211F_PHY_ID        0x001cc916
+#define RTL_8211F_PHY_ID_MASK   0x001fffff
+#define RTL_8211F_PAGE_SELECT   0x1f
+#define RTL_8211F_LCR_ADDR      0x10
+#define RTL_8211F_EEELCR_ADDR   0x11
 
 /* Module parameters */
 #define TX_TIMEO	5000
@@ -3679,9 +3684,12 @@ dma_map_err:
 
 static void stmmac_rx_vlan(struct net_device *dev, struct sk_buff *skb)
 {
-	struct vlan_ethhdr *veth = skb_vlan_eth_hdr(skb);
-	__be16 vlan_proto = veth->h_vlan_proto;
+	struct vlan_ethhdr *veth;
+	__be16 vlan_proto;
 	u16 vlanid;
+
+	veth = (struct vlan_ethhdr *)skb->data;
+	vlan_proto = veth->h_vlan_proto;
 
 	if ((vlan_proto == htons(ETH_P_8021Q) &&
 	     dev->features & NETIF_F_HW_VLAN_CTAG_RX) ||
@@ -3868,10 +3876,10 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit, u32 queue)
 			len = 0;
 		}
 
-read_again:
 		if ((count >= limit - 1) && limit > 1)
 			break;
 
+read_again:
 		buf1_len = 0;
 		buf2_len = 0;
 		entry = next_entry;
@@ -4904,6 +4912,35 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 	return 0;
 }
 
+static int phy_rtl8211f_led_fixup(struct phy_device *phydev)
+{       	  
+       u32 val, val2;  
+	   
+       pr_info("terry in : %s\n", __func__);
+	   
+       /*switch to page0xd04*/
+       phy_write(phydev, RTL_8211F_PAGE_SELECT, 0xd04);
+      
+       /*set led1(green) Link 10/100/1000M, and set led2(yellow) Link 10/100/1000M+Active*/
+       val = phy_read(phydev, RTL_8211F_LCR_ADDR);
+       val |= (1<<5);
+       val |= (1<<8);
+       val &= (~(1<<9));
+       val |= (1<<10);
+       val |= (1<<11);
+       phy_write(phydev, RTL_8211F_LCR_ADDR, val);	      
+	  
+       /*set led1(green) EEE LED function disabled so it can keep on when linked*/
+       val2 = phy_read(phydev, RTL_8211F_EEELCR_ADDR);
+       val2 &= (~(1<<2));
+       phy_write(phydev, RTL_8211F_EEELCR_ADDR, val2);  
+ 
+       /*switch back to page0*/
+       phy_write(phydev,RTL_8211F_PAGE_SELECT, 0xa42);
+ 
+       return 0;
+}
+
 static void stmmac_napi_add(struct net_device *dev)
 {
 	struct stmmac_priv *priv = netdev_priv(dev);
@@ -5207,9 +5244,9 @@ int stmmac_dvr_probe(struct device *device,
 		/* MDIO bus Registration */
 		ret = stmmac_mdio_register(ndev);
 		if (ret < 0) {
-			dev_err_probe(priv->device, ret,
-				      "%s: MDIO bus (id: %d) registration failed\n",
-				      __func__, priv->plat->bus_id);
+			dev_err(priv->device,
+				"%s: MDIO bus (id: %d) registration failed",
+				__func__, priv->plat->bus_id);
 			goto error_mdio_register;
 		}
 	}
@@ -5230,6 +5267,12 @@ int stmmac_dvr_probe(struct device *device,
 #ifdef CONFIG_DEBUG_FS
 	stmmac_init_fs(ndev);
 #endif
+
+        /* register the PHY board fixup */
+	ret = phy_register_fixup_for_uid(RTL_8211F_PHY_ID, RTL_8211F_PHY_ID_MASK, phy_rtl8211f_led_fixup);
+	if (ret) {
+                dev_warn(priv->device, "Cannot register PHY board fixup, terry in :%s.\n", __func__);
+	}	
 
 	/* Let pm_runtime_put() disable the clocks.
 	 * If CONFIG_PM is not enabled, the clocks will stay powered.

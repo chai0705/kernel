@@ -16,25 +16,20 @@ enum rga_mmu {
 	RGA_IOMMU	= 2,
 };
 
-enum rga_hw_support_format_index {
-	RGA_RASTER_INDEX,
-	RGA_AFBC16x16_INDEX,
-	RGA_TILE8x8_INDEX,
-	RGA_TILE4x4_INDEX,
-	RGA_RKFBC64x4_INDEX,
-	RGA_AFBC32x8_INDEX,
-	RGA_FORMAT_INDEX_BUTT,
-};
-
 struct rga_win_data {
 	const char *name;
-	const uint32_t *formats[RGA_FORMAT_INDEX_BUTT];
-	uint32_t formats_count[RGA_FORMAT_INDEX_BUTT];
+	const uint32_t *raster_formats;
+	const uint32_t *fbc_formats;
+	const uint32_t *tile_formats;
+	uint32_t num_of_raster_formats;
+	uint32_t num_of_fbc_formats;
+	uint32_t num_of_tile_formats;
 
-	uint32_t supported_rotations;
-	uint32_t scale_up_mode;
-	uint32_t scale_down_mode;
-	uint32_t rd_mode;
+	const unsigned int supported_rotations;
+	const unsigned int scale_up_mode;
+	const unsigned int scale_down_mode;
+	const unsigned int rd_mode;
+
 };
 
 struct rga_rect {
@@ -73,7 +68,6 @@ extern const struct rga_hw_data rga3_data;
 extern const struct rga_hw_data rga2e_data;
 extern const struct rga_hw_data rga2e_1106_data;
 extern const struct rga_hw_data rga2e_iommu_data;
-extern const struct rga_hw_data rga2p_iommu_data;
 
 /* Returns false if in range, true otherwise */
 static inline bool rga_hw_out_of_range(const struct rga_rect_range *range, int width, int height)

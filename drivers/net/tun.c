@@ -3064,11 +3064,10 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 	struct net *net = sock_net(&tfile->sk);
 	struct tun_struct *tun;
 	void __user* argp = (void __user*)arg;
-	unsigned int carrier;
+	unsigned int ifindex, carrier;
 	struct ifreq ifr;
 	kuid_t owner;
 	kgid_t group;
-	int ifindex;
 	int sndbuf;
 	int vnet_hdr_sz;
 	int le;
@@ -3125,9 +3124,7 @@ static long __tun_chr_ioctl(struct file *file, unsigned int cmd,
 		ret = -EFAULT;
 		if (copy_from_user(&ifindex, argp, sizeof(ifindex)))
 			goto unlock;
-		ret = -EINVAL;
-		if (ifindex < 0)
-			goto unlock;
+
 		ret = 0;
 		tfile->ifindex = ifindex;
 		goto unlock;

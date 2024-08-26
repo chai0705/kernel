@@ -71,6 +71,8 @@
 
 #define OG01A10_NAME			"og01a10"
 
+#define PIX_FORMAT MEDIA_BUS_FMT_SRGGB10_1X10
+
 #define OF_CAMERA_PINCTRL_STATE_DEFAULT	"rockchip,camera_default"
 #define OF_CAMERA_PINCTRL_STATE_SLEEP	"rockchip,camera_sleep"
 
@@ -91,7 +93,6 @@ struct regval {
 };
 
 struct og01a10_mode {
-	u32 bus_fmt;
 	u32 width;
 	u32 height;
 	struct v4l2_fract max_fps;
@@ -101,8 +102,6 @@ struct og01a10_mode {
 	const struct regval *reg_list;
 	u32 hdr_mode;
 	u32 vc[PAD_MAX];
-	u32 link_freq_idx;
-	u32 bpp;
 };
 
 struct og01a10 {
@@ -133,8 +132,6 @@ struct og01a10 {
 	const char		*module_facing;
 	const char		*module_name;
 	const char		*len_name;
-	struct v4l2_fract	cur_fps;
-	u32			cur_vts;
 };
 
 #define to_og01a10(sd) container_of(sd, struct og01a10, subdev)
@@ -416,7 +413,6 @@ static const struct regval og01a10_global_regs[] = {
 
 static const struct og01a10_mode supported_modes[] = {
 	{
-		.bus_fmt = MEDIA_BUS_FMT_SRGGB10_1X10,
 		.width = 1280,
 		.height = 1024,
 		.max_fps = {
@@ -429,13 +425,7 @@ static const struct og01a10_mode supported_modes[] = {
 		.reg_list = og01a10_global_regs,
 		.hdr_mode = NO_HDR,
 		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.link_freq_idx = 0,
-		.bpp = 12,
 	},
-};
-
-static const u32 bus_code[] = {
-	MEDIA_BUS_FMT_SRGGB10_1X10,
 };
 
 static const char * const og01a10_test_pattern_menu[] = {
@@ -571,7 +561,7 @@ static int og01a10_set_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&og01a10->mutex);
 
 	mode = og01a10_find_best_fit(fmt);
-	fmt->format.code = mode->bus_fmt;
+	fmt->format.code = PIX_FORMAT;
 	fmt->format.width = mode->width;
 	fmt->format.height = mode->height;
 	fmt->format.field = V4L2_FIELD_NONE;
@@ -599,7 +589,6 @@ static int og01a10_set_fmt(struct v4l2_subdev *sd,
 					 dst_pixel_rate);
 		__v4l2_ctrl_s_ctrl(og01a10->link_freq,
 				   dst_link_freq);
-		og01a10->cur_fps = mode->max_fps;
 	}
 
 	mutex_unlock(&og01a10->mutex);
@@ -625,7 +614,7 @@ static int og01a10_get_fmt(struct v4l2_subdev *sd,
 	} else {
 		fmt->format.width = mode->width;
 		fmt->format.height = mode->height;
-		fmt->format.code = mode->bus_fmt;
+		fmt->format.code = PIX_FORMAT;
 		fmt->format.field = V4L2_FIELD_NONE;
 		if (fmt->pad < PAD_MAX && mode->hdr_mode != NO_HDR)
 			fmt->reserved[0] = mode->vc[fmt->pad];
@@ -641,9 +630,9 @@ static int og01a10_enum_mbus_code(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_pad_config *cfg,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
-	if (code->index >= ARRAY_SIZE(bus_code))
+	if (code->index != 0)
 		return -EINVAL;
-	code->code = bus_code[code->index];
+	code->code = PIX_FORMAT;
 
 	return 0;
 }
@@ -652,12 +641,10 @@ static int og01a10_enum_frame_sizes(struct v4l2_subdev *sd,
 				   struct v4l2_subdev_pad_config *cfg,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
-	struct og01a10 *og01a10 = to_og01a10(sd);
-
 	if (fse->index >= ARRAY_SIZE(supported_modes))
 		return -EINVAL;
 
-	if (fse->code != og01a10->cur_mode->bus_fmt)
+	if (fse->code != PIX_FORMAT)
 		return -EINVAL;
 
 	fse->min_width = supported_modes[fse->index].width;
@@ -894,81 +881,7 @@ static int og01a10_g_frame_interval(struct v4l2_subdev *sd,
 	struct og01a10 *og01a10 = to_og01a10(sd);
 	const struct og01a10_mode *mode = og01a10->cur_mode;
 
-	if (og01a10->streaming)
-		fi->interval = og01a10->cur_fps;
-	else
-		fi->interval = mode->max_fps;
-	return 0;
-}
-
-static const struct og01a10_mode *og01a10_find_mode(struct og01a10 *og01a10, int fps)
-{
-	const struct og01a10_mode *mode = NULL;
-	const struct og01a10_mode *match = NULL;
-	int cur_fps = 0;
-	int i = 0;
-
-	for (i = 0; i < ARRAY_SIZE(supported_modes); i++) {
-		mode = &supported_modes[i];
-		if (mode->width == og01a10->cur_mode->width &&
-		    mode->height == og01a10->cur_mode->height &&
-		    mode->hdr_mode == og01a10->cur_mode->hdr_mode &&
-		    mode->bus_fmt == og01a10->cur_mode->bus_fmt) {
-			cur_fps = DIV_ROUND_CLOSEST(mode->max_fps.denominator, mode->max_fps.numerator);
-			if (cur_fps == fps) {
-				match = mode;
-				break;
-			}
-		}
-	}
-	return match;
-}
-
-static int og01a10_s_frame_interval(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_frame_interval *fi)
-{
-	struct og01a10 *og01a10 = to_og01a10(sd);
-	const struct og01a10_mode *mode = NULL;
-	struct v4l2_fract *fract = &fi->interval;
-	s64 h_blank, vblank_def;
-	u64 pixel_rate = 0;
-	u32 lane_num = OG01A10_LANES;
-	int fps;
-
-	if (og01a10->streaming)
-		return -EBUSY;
-
-	if (fi->pad != 0)
-		return -EINVAL;
-
-	if (fract->numerator == 0) {
-		v4l2_err(sd, "error param, check interval param\n");
-		return -EINVAL;
-	}
-	fps = DIV_ROUND_CLOSEST(fract->denominator, fract->numerator);
-	mode = og01a10_find_mode(og01a10, fps);
-	if (mode == NULL) {
-		v4l2_err(sd, "couldn't match fi\n");
-		return -EINVAL;
-	}
-
-	og01a10->cur_mode = mode;
-
-	h_blank = mode->hts_def - mode->width;
-	__v4l2_ctrl_modify_range(og01a10->hblank, h_blank,
-				 h_blank, 1, h_blank);
-	vblank_def = mode->vts_def - mode->height;
-	__v4l2_ctrl_modify_range(og01a10->vblank, vblank_def,
-				 OG01A10_VTS_MAX - mode->height,
-				 1, vblank_def);
-	pixel_rate = (u32)link_freq_menu_items[mode->link_freq_idx] / mode->bpp * 2 * lane_num;
-
-	__v4l2_ctrl_s_ctrl_int64(og01a10->pixel_rate,
-				 pixel_rate);
-	__v4l2_ctrl_s_ctrl(og01a10->link_freq,
-			   mode->link_freq_idx);
-	og01a10->cur_fps = mode->max_fps;
-
+	fi->interval = mode->max_fps;
 	return 0;
 }
 
@@ -1086,7 +999,7 @@ static int og01a10_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	/* Initialize try_fmt */
 	try_fmt->width = def_mode->width;
 	try_fmt->height = def_mode->height;
-	try_fmt->code = def_mode->bus_fmt;
+	try_fmt->code = PIX_FORMAT;
 	try_fmt->field = V4L2_FIELD_NONE;
 
 	mutex_unlock(&og01a10->mutex);
@@ -1103,7 +1016,9 @@ static int og01a10_enum_frame_interval(struct v4l2_subdev *sd,
 	if (fie->index >= ARRAY_SIZE(supported_modes))
 		return -EINVAL;
 
-	fie->code = supported_modes[fie->index].bus_fmt;
+	if (fie->code != PIX_FORMAT)
+		return -EINVAL;
+
 	fie->width = supported_modes[fie->index].width;
 	fie->height = supported_modes[fie->index].height;
 	fie->interval = supported_modes[fie->index].max_fps;
@@ -1147,7 +1062,6 @@ static const struct v4l2_subdev_core_ops og01a10_core_ops = {
 static const struct v4l2_subdev_video_ops og01a10_video_ops = {
 	.s_stream = og01a10_s_stream,
 	.g_frame_interval = og01a10_g_frame_interval,
-	.s_frame_interval = og01a10_s_frame_interval,
 };
 
 static const struct v4l2_subdev_pad_ops og01a10_pad_ops = {
@@ -1164,14 +1078,6 @@ static const struct v4l2_subdev_ops og01a10_subdev_ops = {
 	.video	= &og01a10_video_ops,
 	.pad	= &og01a10_pad_ops,
 };
-
-static void og01a10_modify_fps_info(struct og01a10 *og01a10)
-{
-	const struct og01a10_mode *mode = og01a10->cur_mode;
-
-	og01a10->cur_fps.denominator = mode->max_fps.denominator * mode->vts_def /
-				      og01a10->cur_vts;
-}
 
 static int og01a10_set_ctrl(struct v4l2_ctrl *ctrl)
 {
@@ -1220,8 +1126,6 @@ static int og01a10_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = og01a10_write_reg(og01a10->client, OG01A10_REG_VTS,
 					OG01A10_REG_VALUE_16BIT,
 					ctrl->val + og01a10->cur_mode->height);
-		og01a10->cur_vts = ctrl->val + og01a10->cur_mode->height;
-		og01a10_modify_fps_info(og01a10);
 		break;
 	case V4L2_CID_TEST_PATTERN:
 		ret = og01a10_enable_test_pattern(og01a10, ctrl->val);

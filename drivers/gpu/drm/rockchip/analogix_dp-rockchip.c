@@ -403,13 +403,10 @@ static void rockchip_dp_drm_encoder_disable(struct drm_encoder *encoder,
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(old_crtc->state);
 	int ret;
 
-	if (old_crtc->state->active_changed) {
-		if (dp->plat_data.split_mode)
-			s->output_if &= ~(VOP_OUTPUT_IF_eDP1 | VOP_OUTPUT_IF_eDP0);
-		else
-			s->output_if &= ~(dp->id ? VOP_OUTPUT_IF_eDP1 : VOP_OUTPUT_IF_eDP0);
-	}
-
+	if (dp->plat_data.split_mode)
+		s->output_if &= ~(VOP_OUTPUT_IF_eDP1 | VOP_OUTPUT_IF_eDP0);
+	else
+		s->output_if &= ~(dp->id ? VOP_OUTPUT_IF_eDP1 : VOP_OUTPUT_IF_eDP0);
 	crtc = rockchip_dp_drm_get_new_crtc(encoder, state);
 	/* No crtc means we're doing a full shutdown */
 	if (!crtc)
@@ -587,7 +584,7 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 			.ops = &rockchip_dp_audio_codec_ops,
 			.spdif = 1,
 			.i2s = 1,
-			.max_i2s_channels = 8,
+			.max_i2s_channels = 2,
 		};
 
 		dp->audio_pdev =
@@ -692,9 +689,7 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 	if (IS_ERR(dp->adp))
 		return PTR_ERR(dp->adp);
 
-	if (dp->data->split_mode &&
-	    (device_property_read_bool(dev, "split-mode") ||
-	     device_property_read_bool(dev, "dual-channel"))) {
+	if (dp->data->split_mode && device_property_read_bool(dev, "split-mode")) {
 		struct rockchip_dp_device *secondary =
 				rockchip_dp_find_by_id(dev->driver, !dp->id);
 		if (!secondary) {
@@ -704,7 +699,6 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 
 		dp->plat_data.right = secondary->adp;
 		dp->plat_data.split_mode = true;
-		dp->plat_data.dual_channel_mode = device_property_read_bool(dev, "dual-channel");
 		secondary->plat_data.panel = dp->plat_data.panel;
 		secondary->plat_data.left = dp->adp;
 		secondary->plat_data.split_mode = true;

@@ -137,7 +137,7 @@ struct fw_update_info update_info = {
 	.force_update = 0
 };
 
-// int gt1x_update_prepare(char *filename);
+int gt1x_update_prepare(char *filename);
 int gt1x_check_firmware(void);
 u8 *gt1x_get_fw_data(u32 offset, int length);
 int gt1x_update_judge(void);
@@ -149,13 +149,13 @@ void gt1x_update_cleanup(void);
 int gt1x_check_subsystem_in_flash(struct fw_subsystem_info *subsystem);
 int gt1x_read_flash(u32 addr, int length);
 int gt1x_error_erase(void);
-// void dump_to_file(u16 addr, int length, char *filepath);
+void dump_to_file(u16 addr, int length, char *filepath);
 
 int gt1x_update_firmware(void *filename);
 int gt1x_auto_update_proc(void *data);
 
 #if !GTP_HEADER_FW_UPDATE
-// static int gt1x_search_update_files(void);
+static int gt1x_search_update_files(void);
 #endif
 
 int gt1x_hold_ss51_dsp(void);
@@ -165,7 +165,6 @@ void gt1x_leave_update_mode(void);
  * @return: return 0 if success, otherwise return a negative number
  *          which contains the error code.
  */
-#if 0 //close for GKI
 s32 gt1x_check_fs_mounted(char *path_name)
 {
 	struct path root_path;
@@ -194,7 +193,6 @@ check_fs_fail:
 	path_put(&root_path);
 	return err;
 }
-#endif
 
 int gt1x_i2c_write_with_readback(u16 addr, u8 *buffer, int length)
 {
@@ -228,13 +226,7 @@ u32 getUint(u8 *buffer, int len)
 
 int gt1x_auto_update_proc(void *data)
 {
-/* auto update from /data/_goodix_update_.bin
- * Does not meet the gki standard.
- * close auto update function.
- */
-	GTP_ERROR("auto update failed! return\n");
-	return 0;
-#if 0
+
 #if GTP_HEADER_FW_UPDATE
 	GTP_INFO("Start auto update thread...");
 	gt1x_update_firmware(NULL);
@@ -271,9 +263,8 @@ int gt1x_auto_update_proc(void *data)
 	}
 #endif
 	return 0;
-#endif
 }
-#if 0 //!GTP_HEADER_FW_UPDATE
+#if !GTP_HEADER_FW_UPDATE
 static int gt1x_search_update_files(void)
 {
 	/*wait 10s(max) if fs is not ready*/
@@ -347,12 +338,6 @@ void gt1x_enter_update_mode(void)
 
 int gt1x_update_firmware(void *filename)
 {
-/*
- * gt1x update firmware doesn't meet gki
- */
-	GTP_ERROR("gt1x update firmware failed\n");
-	return 0;
-#if 0
 	int i = 0;
 	int ret = 0;
 	u8 *p;
@@ -476,10 +461,8 @@ gt1x_update_exit:
 	}
 	GTP_INFO("Update firmware succeefully!");
 	return ret;
-#endif
 }
 
-#if 0 //close for GKI
 int gt1x_update_prepare(char *filename)
 {
 	int ret = 0;
@@ -646,7 +629,6 @@ int gt1x_check_firmware(void)
 
 	return 0;
 }
-#endif
 
 /**
  * @return: return a pointer pointed at the content of firmware
@@ -1321,7 +1303,6 @@ void gt1x_leave_update_mode(void)
 	gt1x_irq_enable();
 }
 
-#if 0 //close for GKI
 void dump_to_file(u16 addr, int length, char *filepath)
 {
 	struct file *flp = NULL;
@@ -1349,7 +1330,6 @@ void dump_to_file(u16 addr, int length, char *filepath)
 	}
 	filp_close(flp, NULL);
 }
-#endif
 
 int gt1x_hold_ss51_dsp_no_reset(void)
 {

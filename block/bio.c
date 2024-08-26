@@ -21,7 +21,6 @@
 #include <linux/blk-crypto.h>
 
 #include <trace/events/block.h>
-#include <trace/hooks/block.h>
 #include "blk.h"
 #include "blk-rq-qos.h"
 
@@ -253,7 +252,6 @@ static void bio_free(struct bio *bio)
 	struct bio_set *bs = bio->bi_pool;
 	void *p;
 
-	trace_android_vh_bio_free(bio);
 	bio_uninit(bio);
 
 	if (bs) {

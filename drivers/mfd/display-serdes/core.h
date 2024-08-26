@@ -28,7 +28,6 @@
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
 #include <linux/interrupt.h>
-#include <linux/random.h>
 
 #include <linux/completion.h>
 #include <linux/interrupt.h>
@@ -39,7 +38,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/extcon-provider.h>
 #include <linux/bitfield.h>
-#include <linux/version.h>
+
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_panel.h>
@@ -47,11 +46,7 @@
 #include <drm/drm_of.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_probe_helper.h>
-#if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
-#include <drm/display/drm_dp_helper.h>
-#else
 #include <drm/drm_dp_helper.h>
-#endif
 #include <drm/drm_device.h>
 #include <drm/drm_modes.h>
 #include <drm/drm_atomic_state_helper.h>
@@ -352,7 +347,6 @@ struct serdes {
 	struct mutex io_lock;
 	struct mutex irq_lock;
 	struct mutex wq_lock;
-	struct mutex reg_check_lock;
 	struct device *dev;
 	enum serdes_type type;
 	struct regmap *regmap;
@@ -379,10 +373,6 @@ struct serdes {
 	bool route_enable;
 	bool use_delay_work;
 
-	struct kthread_worker *kworker;
-	struct kthread_delayed_work reg_check_work;
-	bool use_reg_check_work;
-
 	bool split_mode_enable;
 	unsigned int reg_hw;
 	unsigned int reg_use;
@@ -397,7 +387,6 @@ struct serdes {
 	struct pinctrl_state *pins_sleep;
 
 	struct serdes_init_seq *serdes_init_seq;
-	struct serdes_init_seq *serdes_backup_seq;
 	struct serdes_bridge *serdes_bridge;
 	struct serdes_bridge_split *serdes_bridge_split;
 	struct serdes_panel *serdes_panel;

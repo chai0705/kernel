@@ -422,7 +422,6 @@ static bool blk_mq_sched_bypass_insert(struct blk_mq_hw_ctx *hctx,
 	return false;
 }
 
-#include <trace/hooks/block.h>
 void blk_mq_sched_insert_request(struct request *rq, bool at_head,
 				 bool run_queue, bool async)
 {
@@ -430,13 +429,10 @@ void blk_mq_sched_insert_request(struct request *rq, bool at_head,
 	struct elevator_queue *e = q->elevator;
 	struct blk_mq_ctx *ctx = rq->mq_ctx;
 	struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
-	bool skip = false;
 
 	WARN_ON(e && (rq->tag != BLK_MQ_NO_TAG));
 
-	trace_android_vh_blk_mq_sched_insert_request(&skip, rq);
-
-	if (!skip && blk_mq_sched_bypass_insert(hctx, !!e, rq)) {
+	if (blk_mq_sched_bypass_insert(hctx, !!e, rq)) {
 		/*
 		 * Firstly normal IO request is inserted to scheduler queue or
 		 * sw queue, meantime we add flush request to dispatch queue(

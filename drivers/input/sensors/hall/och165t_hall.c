@@ -141,7 +141,7 @@ static const struct i2c_device_id hall_och165t_id[] = {
 
 static struct i2c_driver hall_och165t_driver = {
 	.probe = hall_och165t_probe,
-	.remove = (void *)hall_och165t_remove,
+	.remove = hall_och165t_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = hall_och165t_id,
 	.driver = {

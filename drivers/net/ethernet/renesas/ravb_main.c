@@ -1383,12 +1383,12 @@ static int ravb_open(struct net_device *ndev)
 	if (priv->chip_id == RCAR_GEN2)
 		ravb_ptp_init(ndev, priv->pdev);
 
+	netif_tx_start_all_queues(ndev);
+
 	/* PHY control start */
 	error = ravb_phy_start(ndev);
 	if (error)
 		goto out_ptp_stop;
-
-	netif_tx_start_all_queues(ndev);
 
 	return 0;
 
@@ -1438,12 +1438,6 @@ static void ravb_tx_timeout_work(struct work_struct *work)
 	struct net_device *ndev = priv->ndev;
 	int error;
 
-	if (!rtnl_trylock()) {
-		usleep_range(1000, 2000);
-		schedule_work(&priv->work);
-		return;
-	}
-
 	netif_tx_stop_all_queues(ndev);
 
 	/* Stop PTP Clock driver */
@@ -1476,7 +1470,7 @@ static void ravb_tx_timeout_work(struct work_struct *work)
 		 */
 		netdev_err(ndev, "%s: ravb_dmac_init() failed, error %d\n",
 			   __func__, error);
-		goto out_unlock;
+		return;
 	}
 	ravb_emac_init(ndev);
 
@@ -1486,9 +1480,6 @@ out:
 		ravb_ptp_init(ndev, priv->pdev);
 
 	netif_tx_start_all_queues(ndev);
-
-out_unlock:
-	rtnl_unlock();
 }
 
 /* Packet transmit function for Ethernet AVB */
@@ -1500,7 +1491,7 @@ static netdev_tx_t ravb_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 	struct ravb_tstamp_skb *ts_skb;
 	struct ravb_tx_desc *desc;
 	unsigned long flags;
-	dma_addr_t dma_addr;
+	u32 dma_addr;
 	void *buffer;
 	u32 entry;
 	u32 len;
@@ -2072,9 +2063,7 @@ static int ravb_probe(struct platform_device *pdev)
 	ndev->hw_features = NETIF_F_RXCSUM;
 
 	pm_runtime_enable(&pdev->dev);
-	error = pm_runtime_resume_and_get(&pdev->dev);
-	if (error < 0)
-		goto out_rpm_disable;
+	pm_runtime_get_sync(&pdev->dev);
 
 	/* The Ether-specific entries in the device structure. */
 	ndev->base_addr = res->start;
@@ -2249,7 +2238,6 @@ out_release:
 	free_netdev(ndev);
 
 	pm_runtime_put(&pdev->dev);
-out_rpm_disable:
 	pm_runtime_disable(&pdev->dev);
 	return error;
 }

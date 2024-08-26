@@ -181,47 +181,21 @@ void rose_kill_by_neigh(struct rose_neigh *neigh)
  */
 static void rose_kill_by_device(struct net_device *dev)
 {
-	struct sock *sk, *array[16];
-	struct rose_sock *rose;
-	bool rescan;
-	int i, cnt;
+	struct sock *s;
 
-start:
-	rescan = false;
-	cnt = 0;
 	spin_lock_bh(&rose_list_lock);
-	sk_for_each(sk, &rose_list) {
-		rose = rose_sk(sk);
-		if (rose->device == dev) {
-			if (cnt == ARRAY_SIZE(array)) {
-				rescan = true;
-				break;
-			}
-			sock_hold(sk);
-			array[cnt++] = sk;
-		}
-	}
-	spin_unlock_bh(&rose_list_lock);
+	sk_for_each(s, &rose_list) {
+		struct rose_sock *rose = rose_sk(s);
 
-	for (i = 0; i < cnt; i++) {
-		sk = array[cnt];
-		rose = rose_sk(sk);
-		lock_sock(sk);
-		spin_lock_bh(&rose_list_lock);
 		if (rose->device == dev) {
-			rose_disconnect(sk, ENETUNREACH, ROSE_OUT_OF_ORDER, 0);
+			rose_disconnect(s, ENETUNREACH, ROSE_OUT_OF_ORDER, 0);
 			if (rose->neighbour)
 				rose->neighbour->use--;
 			dev_put(rose->device);
 			rose->device = NULL;
 		}
-		spin_unlock_bh(&rose_list_lock);
-		release_sock(sk);
-		sock_put(sk);
-		cond_resched();
 	}
-	if (rescan)
-		goto start;
+	spin_unlock_bh(&rose_list_lock);
 }
 
 /*
@@ -681,10 +655,7 @@ static int rose_release(struct socket *sock)
 		break;
 	}
 
-	spin_lock_bh(&rose_list_lock);
 	dev_put(rose->device);
-	rose->device = NULL;
-	spin_unlock_bh(&rose_list_lock);
 	sock->sk = NULL;
 	release_sock(sk);
 	sock_put(sk);
@@ -1336,11 +1307,9 @@ static int rose_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 	case TIOCINQ: {
 		struct sk_buff *skb;
 		long amount = 0L;
-
-		spin_lock_irq(&sk->sk_receive_queue.lock);
+		/* These two are safe on a single CPU system as only user tasks fiddle here */
 		if ((skb = skb_peek(&sk->sk_receive_queue)) != NULL)
 			amount = skb->len;
-		spin_unlock_irq(&sk->sk_receive_queue.lock);
 		return put_user(amount, (unsigned int __user *) argp);
 	}
 

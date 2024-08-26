@@ -77,6 +77,7 @@
 MODULE_AUTHOR("Eli Cohen <eli@mellanox.com>");
 MODULE_DESCRIPTION("Mellanox 5th generation network adapters (ConnectX series) core driver");
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_VERSION(DRIVER_VERSION);
 
 unsigned int mlx5_core_debug_mask;
 module_param_named(debug_mask, mlx5_core_debug_mask, uint, 0644);
@@ -227,7 +228,7 @@ static void mlx5_set_driver_version(struct mlx5_core_dev *dev)
 	strncat(string, ",", remaining_size);
 
 	remaining_size = max_t(int, 0, driver_ver_sz - strlen(string));
-	strncat(string, KBUILD_MODNAME, remaining_size);
+	strncat(string, DRIVER_NAME, remaining_size);
 
 	remaining_size = max_t(int, 0, driver_ver_sz - strlen(string));
 	strncat(string, ",", remaining_size);
@@ -312,7 +313,7 @@ static int request_bar(struct pci_dev *pdev)
 		return -ENODEV;
 	}
 
-	err = pci_request_regions(pdev, KBUILD_MODNAME);
+	err = pci_request_regions(pdev, DRIVER_NAME);
 	if (err)
 		dev_err(&pdev->dev, "Couldn't get PCI resources, aborting\n");
 
@@ -1619,7 +1620,7 @@ void mlx5_recover_device(struct mlx5_core_dev *dev)
 }
 
 static struct pci_driver mlx5_core_driver = {
-	.name           = KBUILD_MODNAME,
+	.name           = DRIVER_NAME,
 	.id_table       = mlx5_core_pci_table,
 	.probe          = init_one,
 	.remove         = remove_one,
@@ -1644,9 +1645,6 @@ static void mlx5_core_verify_params(void)
 static int __init mlx5_init(void)
 {
 	int err;
-
-	WARN_ONCE(strcmp(MLX5_ADEV_NAME, KBUILD_MODNAME),
-		  "mlx5_core name not in sync with kernel module name");
 
 	get_random_bytes(&sw_owner_id, sizeof(sw_owner_id));
 

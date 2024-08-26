@@ -38,5 +38,5 @@ endif
 
 source "drivers/net/wireless/rockchip_wlan/cywdhd/Kconfig"
 source "drivers/net/wireless/rockchip_wlan/infineon/Kconfig"
-
+source "drivers/net/wireless/rockchip_wlan/rtl8723du/Kconfig"
 endif # WL_ROCKCHIP

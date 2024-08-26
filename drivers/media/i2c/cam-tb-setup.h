@@ -6,12 +6,11 @@
 
 #include <linux/types.h>
 
-#ifdef CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_SETUP
+#ifdef CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_ISP
 u32 get_rk_cam_w(void);
 u32 get_rk_cam_h(void);
 u32 get_rk_cam_hdr(void);
 u32 get_rk_cam_fps(void);
-u32 get_rk_cam_skip_frame_interval(void);
 #else
 static inline u32 get_rk_cam_w(void)
 {
@@ -26,10 +25,6 @@ static inline u32 get_rk_cam_hdr(void)
 	return 0;
 }
 static inline u32 get_rk_cam_fps(void)
-{
-	return 0;
-}
-static inline u32 get_rk_cam_skip_frame_interval(void)
 {
 	return 0;
 }

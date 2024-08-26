@@ -272,11 +272,7 @@ static int iep2_process_reg_fd(struct mpp_session *session,
 		}
 
 		mem_region->reg_idx = iep2_addr_rnum[i];
-
-		if (session->msg_flags & MPP_FLAGS_REG_NO_OFFSET)
-			offset = mpp_query_reg_offset_info(&task->off_inf, mem_region->reg_idx);
-
-		mpp_debug(DEBUG_IOMMU, "reg[%3d]: %3d => %pad + offset %u\n",
+		mpp_debug(DEBUG_IOMMU, "reg[%3d]: %3d => %pad + offset %10d\n",
 			  iep2_addr_rnum[i], usr_fd, &mem_region->iova, offset);
 		paddr[i] = mem_region->iova + offset;
 	}
@@ -997,7 +993,7 @@ static int iep2_probe(struct platform_device *pdev)
 
 	ret = devm_request_threaded_irq(dev, mpp->irq,
 					mpp_dev_irq,
-					NULL,
+					mpp_dev_isr_sched,
 					IRQF_SHARED,
 					dev_name(dev), mpp);
 	if (ret) {

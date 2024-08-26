@@ -389,7 +389,8 @@ enum mpp_task_state {
 	TASK_TIMING_RUN_END	= 21,
 	TASK_TIMING_IRQ		= 22,
 	TASK_TIMING_TO_CANCEL	= 23,
-	TASK_TIMING_FINISH	= 24,
+	TASK_TIMING_ISR		= 24,
+	TASK_TIMING_FINISH	= 25,
 };
 
 /* The context for the a task */
@@ -428,6 +429,7 @@ struct mpp_task {
 	ktime_t on_run_end;
 	ktime_t on_irq;
 	ktime_t on_cancel_timeout;
+	ktime_t on_isr;
 	ktime_t on_finish;
 
 	/* hardware info for current task */
@@ -435,7 +437,6 @@ struct mpp_task {
 	u32 task_index;
 	u32 task_id;
 	u32 *reg;
-	u32 irq_status;
 	/* event for session wait thread */
 	wait_queue_head_t wait;
 
@@ -650,6 +651,7 @@ int mpp_power_off(struct mpp_dev *mpp);
 int mpp_dev_reset(struct mpp_dev *mpp);
 
 irqreturn_t mpp_dev_irq(int irq, void *param);
+irqreturn_t mpp_dev_isr_sched(int irq, void *param);
 
 struct reset_control *mpp_reset_control_get(struct mpp_dev *mpp,
 					    enum MPP_RESET_TYPE type,

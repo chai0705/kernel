@@ -43,10 +43,9 @@ static int timbgpio_update_bit(struct gpio_chip *gpio, unsigned index,
 	unsigned offset, bool enabled)
 {
 	struct timbgpio *tgpio = gpiochip_get_data(gpio);
-	unsigned long flags;
 	u32 reg;
 
-	spin_lock_irqsave(&tgpio->lock, flags);
+	spin_lock(&tgpio->lock);
 	reg = ioread32(tgpio->membase + offset);
 
 	if (enabled)
@@ -55,7 +54,7 @@ static int timbgpio_update_bit(struct gpio_chip *gpio, unsigned index,
 		reg &= ~(1 << index);
 
 	iowrite32(reg, tgpio->membase + offset);
-	spin_unlock_irqrestore(&tgpio->lock, flags);
+	spin_unlock(&tgpio->lock);
 
 	return 0;
 }

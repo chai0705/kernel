@@ -676,7 +676,6 @@ int sock_sendmsg(struct socket *sock, struct msghdr *msg)
 {
 	struct sockaddr_storage *save_addr = (struct sockaddr_storage *)msg->msg_name;
 	struct sockaddr_storage address;
-	int save_len = msg->msg_namelen;
 	int ret;
 
 	if (msg->msg_name) {
@@ -686,7 +685,6 @@ int sock_sendmsg(struct socket *sock, struct msghdr *msg)
 
 	ret = __sock_sendmsg(sock, msg);
 	msg->msg_name = save_addr;
-	msg->msg_namelen = save_len;
 
 	return ret;
 }
@@ -3414,11 +3412,7 @@ static long compat_sock_ioctl(struct file *file, unsigned int cmd,
 
 int kernel_bind(struct socket *sock, struct sockaddr *addr, int addrlen)
 {
-	struct sockaddr_storage address;
-
-	memcpy(&address, addr, addrlen);
-
-	return sock->ops->bind(sock, (struct sockaddr *)&address, addrlen);
+	return sock->ops->bind(sock, addr, addrlen);
 }
 EXPORT_SYMBOL(kernel_bind);
 

@@ -2578,12 +2578,32 @@
 /* ISP21 DHAZ/DRC/BAY3D */
 #define ISP21_SELF_FORCE_UPD		BIT(31)
 
-static inline bool dmatx_is_stream_stopped(struct rkisp_stream *stream)
+static inline bool dmatx0_is_stream_stopped(struct rkisp_stream *stream)
 {
-	u32 reg = stream->config->dma.ctrl;
-	u32 val = rkisp_read(stream->ispdev, reg, true);
+	u32 ret = rkisp_read(stream->ispdev, CSI2RX_RAW0_WR_CTRL, true);
 
-	return !(val & SW_CSI_RAW_WR_EN_SHD);
+	return !(ret & SW_CSI_RAW_WR_EN_SHD);
+}
+
+static inline bool dmatx1_is_stream_stopped(struct rkisp_stream *stream)
+{
+	u32 ret = rkisp_read(stream->ispdev, CSI2RX_RAW1_WR_CTRL, true);
+
+	return !(ret & SW_CSI_RAW_WR_EN_SHD);
+}
+
+static inline bool dmatx2_is_stream_stopped(struct rkisp_stream *stream)
+{
+	u32 ret = rkisp_read(stream->ispdev, CSI2RX_RAW2_WR_CTRL, true);
+
+	return !(ret & SW_CSI_RAW_WR_EN_SHD);
+}
+
+static inline bool dmatx3_is_stream_stopped(struct rkisp_stream *stream)
+{
+	u32 ret = rkisp_read(stream->ispdev, CSI2RX_RAW3_WR_CTRL, true);
+
+	return !(ret & SW_CSI_RAW_WR_EN_SHD);
 }
 
 static inline bool is_mpfbc_stopped(void __iomem *base)
@@ -2676,10 +2696,15 @@ static inline void mi_raw_length(struct rkisp_stream *stream)
 	    stream->config->mi.length == MI_RAW1_RD_LENGTH ||
 	    stream->config->mi.length == MI_RAW2_RD_LENGTH)
 		is_direct = false;
-	rkisp_unite_write(stream->ispdev, stream->config->mi.length,
-			  stream->out_fmt.plane_fmt[0].bytesperline, is_direct);
+	rkisp_write(stream->ispdev, stream->config->mi.length,
+		    stream->out_fmt.plane_fmt[0].bytesperline, is_direct);
 	if (stream->ispdev->isp_ver == ISP_V21 || stream->ispdev->isp_ver == ISP_V30)
-		rkisp_unite_set_bits(stream->ispdev, MI_RD_CTRL2, 0, BIT(30), false);
+		rkisp_set_bits(stream->ispdev, MI_RD_CTRL2, 0, BIT(30), false);
+	if (stream->ispdev->hw_dev->unite) {
+		rkisp_next_write(stream->ispdev, stream->config->mi.length,
+				 stream->out_fmt.plane_fmt[0].bytesperline, is_direct);
+		rkisp_next_set_bits(stream->ispdev, MI_RD_CTRL2, 0, BIT(30), false);
+	}
 }
 
 static inline void rx_force_upd(void __iomem *base)

@@ -431,8 +431,7 @@ static int pm_config_probe(struct platform_device *pdev)
 
 	sleep_config =
 		devm_kmalloc_array(&pdev->dev, RK_PM_STATE_MAX,
-				   sizeof(*sleep_config),
-				   GFP_KERNEL | __GFP_ZERO);
+				   sizeof(*sleep_config), GFP_KERNEL);
 	if (!sleep_config)
 		return -ENOMEM;
 

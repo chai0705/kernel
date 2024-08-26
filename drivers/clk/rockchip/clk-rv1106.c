@@ -1007,16 +1007,12 @@ static void _cru_pvtpll_calibrate(int count_offset, int length_offset, int targe
 	writel_relaxed(val, rv1106_cru_base + length_offset);
 	usleep_range(2000, 2100);
 	rate1 = readl_relaxed(rv1106_cru_base + count_offset);
-	if (rate1 < target_rate)
+	if ((rate1 < target_rate) || (rate1 >= rate0))
 		return;
 	if (abs(rate1 - target_rate) < (target_rate >> 5))
 		return;
 
-	if (rate1 < rate0)
-		step = rate0 - rate1;
-	else
-		step = 5;
-	step = max_t(unsigned int, step, 5);
+	step = rate0 - rate1;
 	delta = rate1 - target_rate;
 	length += delta / step;
 	val = HIWORD_UPDATE(length, PVTPLL_LENGTH_SEL_MASK, PVTPLL_LENGTH_SEL_SHIFT);
@@ -1139,7 +1135,7 @@ static void rockchip_rv1106_pvtpll_init(struct rockchip_clk_provider *ctx)
 	writel_relaxed(0xffff0004, ctx->reg_base + CRU_PVTPLL1_CON2_H);
 	writel_relaxed(0x00030003, ctx->reg_base + CRU_PVTPLL1_CON0_L);
 
-	queue_delayed_work(system_freezable_wq, &pvtpll_calibrate_work, msecs_to_jiffies(300));
+	schedule_delayed_work(&pvtpll_calibrate_work, msecs_to_jiffies(3000));
 }
 
 static int rv1106_clk_panic(struct notifier_block *this,

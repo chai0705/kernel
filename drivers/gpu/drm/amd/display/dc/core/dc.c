@@ -862,19 +862,12 @@ static void disable_vbios_mode_if_required(
 		if (stream == NULL)
 			continue;
 
-		if (stream->apply_seamless_boot_optimization)
-			continue;
-
-		// only looking for first odm pipe
-		if (pipe->prev_odm_pipe)
-			continue;
-
 		if (stream->link->local_sink &&
 			stream->link->local_sink->sink_signal == SIGNAL_TYPE_EDP) {
 			link = stream->link;
 		}
 
-		if (link != NULL && link->link_enc->funcs->is_dig_enabled(link->link_enc)) {
+		if (link != NULL) {
 			unsigned int enc_inst, tg_inst = 0;
 			unsigned int pix_clk_100hz;
 

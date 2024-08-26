@@ -41,6 +41,7 @@
 #include <asm/xen/hypercall.h>
 #include <xen/balloon.h>
 
+#define XENVIF_QUEUE_LENGTH 32
 #define XENVIF_NAPI_WEIGHT  64
 
 /* Number of bytes allowed on the internal guest Rx queue. */
@@ -526,6 +527,8 @@ struct xenvif *xenvif_alloc(struct device *parent, domid_t domid,
 		NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_FRAGLIST;
 	dev->features = dev->hw_features | NETIF_F_RXCSUM;
 	dev->ethtool_ops = &xenvif_ethtool_ops;
+
+	dev->tx_queue_len = XENVIF_QUEUE_LENGTH;
 
 	dev->min_mtu = ETH_MIN_MTU;
 	dev->max_mtu = ETH_MAX_MTU - VLAN_ETH_HLEN;
