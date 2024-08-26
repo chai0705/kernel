@@ -10,6 +10,7 @@
 #
 # Normal rules (sorted alphabetically)
 #
+extboot/*
 .*
 *.a
 *.asn1.[ch]
