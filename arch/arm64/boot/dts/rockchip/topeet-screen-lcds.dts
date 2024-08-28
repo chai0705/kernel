@@ -3,10 +3,10 @@
 //#define LCD_TYPE_LVDS_10_1_1280x800_GT9271 //VP2
 //#define LCD_TYPE_LVDS_10_1_1024x600_GT911  //VP2
 //#define LCD_TYPE_LVDS_7_0  //VP2
-//#define LCD_TYPE_HDMI1  //VP1
-//#define LCD_TYPE_HDMI0  //VP0
+#define LCD_TYPE_HDMI1  //VP1
+#define LCD_TYPE_HDMI0  //VP0
 //#define LCD_TYPE_TYPEC_DP  //VP1
-#define LCD_TYPE_MIPI1    //VP3
+//#define LCD_TYPE_MIPI1    //VP3
 
 / {
 backlight: backlight {
