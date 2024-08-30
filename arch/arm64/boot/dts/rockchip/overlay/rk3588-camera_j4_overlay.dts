@@ -1,0 +1,210 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/usb/pd.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/input/rk-input.h>
+#include <dt-bindings/display/drm_mipi_dsi.h>
+#include <dt-bindings/display/rockchip_vop.h>
+#include <dt-bindings/sensor-dev.h>
+#include <dt-bindings/clock/rk3588-cru.h>
+#include <dt-bindings/power/rk3588-power.h>
+
+/ {
+    fragment@0 {
+        target = <&csi2_dcphy0>;
+
+        __overlay__ {
+            status = "okay";
+
+            ports {
+                port@0 {
+                    reg = <0>;
+
+                    mipi_in_ucam0: endpoint@1 {
+                        reg = <1>;
+                        remote-endpoint = <&ov5695_out_1>;
+                        data-lanes = <1 2>;
+                    };
+                    mipi_in_ucam0_ov13850: endpoint@2 {
+                        reg = <2>;
+                        remote-endpoint = <&ov13850_out_1>;
+                        data-lanes = <1 2 3 4>;
+                    };
+                };
+
+
+
+                port@1 {
+                    reg = <1>;
+
+                    csidcphy0_out: endpoint@0 {
+                        reg = <0>;
+                        remote-endpoint = <&mipi0_csi2_input>;
+                    };
+                };
+            };
+        };
+    };
+
+    fragment@1 {
+        target = <&mipi_dcphy0>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@2 {
+        target = <&i2c2>;
+
+        __overlay__ {
+            status = "okay";
+            pinctrl-0 = <&i2c2m4_xfer>;
+
+            ov5695_1: ov5695@36 {
+                status = "okay";
+                compatible = "ovti,ov5695";
+                reg = <0x36>;
+                clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+                clock-names = "xvclk";
+                power-domains = <&power RK3588_PD_VI>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&mipim0_camera1_clk>;
+                reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_LOW>;
+                pwdn-gpios = <&gpio1 RK_PA2 GPIO_ACTIVE_LOW>;
+                rockchip,camera-module-index = <0>;
+                rockchip,camera-module-facing = "back";
+                rockchip,camera-module-name = "default";
+                rockchip,camera-module-lens-name = "default";
+
+                port {
+                    ov5695_out_1: endpoint {
+                        remote-endpoint = <&mipi_in_ucam0>;
+                        data-lanes = <1 2>;
+                    };
+                };
+            };
+
+            ov13850_1: ov13850@10 {
+                status = "okay";
+                compatible = "otvi,ov13850";
+                reg = <0x10>;
+                clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+                clock-names = "xvclk";
+                power-domains = <&power RK3588_PD_VI>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&mipim0_camera1_clk>;
+                reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
+                pwdn-gpios = <&gpio1 RK_PA2 GPIO_ACTIVE_HIGH>;
+                rockchip,camera-module-index = <0>;
+                rockchip,camera-module-facing = "back";
+                rockchip,camera-module-name = "CMK-CT0116";
+                rockchip,camera-module-lens-name = "Largan-50013A1";
+
+                port {
+                    ov13850_out_1: endpoint {
+                        remote-endpoint = <&mipi_in_ucam0_ov13850>;
+                        data-lanes = <1 2 3 4>;
+                    };
+                };
+            };
+        };
+    };
+
+    fragment@3 {
+        target = <&mipi0_csi2>;
+        __overlay__ {
+            status = "okay";
+
+            ports {
+                port@0 {
+                    reg = <0>;
+
+                    mipi0_csi2_input: endpoint@1 {
+                        reg = <1>;
+                        remote-endpoint = <&csidcphy0_out>;
+                    };
+                };
+
+                port@1 {
+                    reg = <1>;
+
+                    mipi0_csi2_output: endpoint@0 {
+                        reg = <0>;
+                        remote-endpoint = <&cif_mipi_in0>;
+                    };
+                };
+            };
+        };
+    };
+
+    fragment@4 {
+        target = <&rkcif>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@5 {
+        target = <&rkcif_mmu>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@6 {
+        target = <&rkcif_mipi_lvds>;
+        __overlay__ {
+            status = "okay";
+
+            port {
+                cif_mipi_in0: endpoint {
+                    remote-endpoint = <&mipi0_csi2_output>;
+                };
+            };
+        };
+    };
+
+    fragment@7 {
+        target = <&rkcif_mipi_lvds_sditf>;
+        __overlay__ {
+            status = "okay";
+
+            port {
+                mipi_lvds_sditf: endpoint {
+                    remote-endpoint = <&isp0_vir0>;
+                };
+            };
+        };
+    };
+
+    fragment@8 {
+        target = <&rkisp0>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@9 {
+        target = <&isp0_mmu>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@10 {
+        target = <&rkisp0_vir0>;
+        __overlay__ {
+            status = "okay";
+
+            port {
+                isp0_vir0: endpoint@0 {
+                    reg = <0>;
+                    remote-endpoint = <&mipi_lvds_sditf>;
+                };
+            };
+        };
+    };
+};
