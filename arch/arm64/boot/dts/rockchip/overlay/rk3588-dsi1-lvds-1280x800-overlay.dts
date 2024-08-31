@@ -8,16 +8,16 @@
 
 / {
     fragment@0 {
-        target = <&route_dsi0>;
+        target = <&route_dsi1>;
 
         __overlay__ {
             status = "okay";
-            connect = <&vp2_out_dsi0>;
+            connect = <&vp3_out_dsi1>;
         };
     };
 
     fragment@1 {
-        target = <&mipi_dcphy0>;
+        target = <&dsi1_in_vp3>;
 
         __overlay__ {
             status = "okay";
@@ -25,7 +25,7 @@
     };
 
     fragment@2 {
-        target = <&dsi0_in_vp2>;
+        target = <&mipi_dcphy1>;
 
         __overlay__ {
             status = "okay";
@@ -33,12 +33,12 @@
     };
 
     fragment@3 {
-        target = <&dsi0>;
+        target = <&dsi1>;
 
         __overlay__ {
             status = "okay";
 
-            dsi0_panel: panel@0 {
+            dsi1_panel: panel@0 {
                 status = "okay";
                 compatible = "simple-panel-dsi";
                 reg = <0>;
@@ -88,16 +88,16 @@
                                         29 02 06 98 04 18 19 1A 06
 
                                         29 02 06 9C 04 31 04 00 00
-		];
+                ];
 
                 panel-exit-sequence = [
                         05 05 01 28
                         05 78 01 10
                 ];
 
-                disp_timings0: display-timings {
-                    native-mode = <&dsi0_timing0>;
-                    dsi0_timing0: timing0 {
+                disp_timings1: display-timings {
+                    native-mode = <&dsi1_timing0>;
+                    dsi1_timing0: timing0 {
                         clock-frequency = <90000000>;
                         hactive = <1280>;
                         vactive = <800>;
@@ -120,8 +120,8 @@
 
                     port@0 {
                         reg = <0>;
-                        panel_in_dsi: endpoint {
-                            remote-endpoint = <&dsi_out_panel>;
+                        panel_in_dsi1: endpoint {
+                            remote-endpoint = <&dsi1_out_panel>;
                         };
                     };
                 };
@@ -133,8 +133,8 @@
 
                 port@1 {
                     reg = <1>;
-                    dsi_out_panel: endpoint {
-                        remote-endpoint = <&panel_in_dsi>;
+                    dsi1_out_panel: endpoint {
+                        remote-endpoint = <&panel_in_dsi1>;
                     };
                 };
             };
@@ -142,11 +142,11 @@
     };
 
     fragment@4 {
-        target = <&i2c2>;
+        target = <&i2c3>;
 
         __overlay__ {
             status = "okay";
-            pinctrl-0 = <&i2c2m4_xfer>;
+            pinctrl-0 = <&i2c3m0_xfer>;
 
             gt9xx@5d {
                 compatible = "goodix,gt9271";
@@ -164,4 +164,3 @@
         };
     };
 };
-
