@@ -34,10 +34,11 @@ int rga_get_pixel_stride_from_format(uint32_t format);
 const char *rga_get_format_name(uint32_t format);
 const char *rga_get_render_mode_str(uint8_t mode);
 const char *rga_get_rotate_mode_str(uint8_t mode);
-const char *rga_get_blend_mode_str(enum rga_alpha_blend_mode mode);
+const char *rga_get_blend_mode_str(uint16_t alpha_rop_flag,
+				   uint16_t alpha_mode_0,
+				   uint16_t alpha_mode_1);
 const char *rga_get_memory_type_str(uint8_t type);
 const char *rga_get_mmu_type_str(enum rga_mmu mmu_type);
-const char *rga_get_core_name(enum RGA_SCHEDULER_CORE core);
 
 void rga_convert_addr(struct rga_img_info_t *img, bool before_vir_get_channel);
 void rga_swap_pd_mode(struct rga_req *req_rga);

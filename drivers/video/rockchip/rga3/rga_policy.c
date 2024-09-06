@@ -15,7 +15,7 @@
 #define GET_GCD(n1, n2) \
 	({ \
 		int i; \
-		int gcd = 1; \
+		int gcd = 0; \
 		for (i = 1; i <= (n1) && i <= (n2); i++) { \
 			if ((n1) % i == 0 && (n2) % i == 0) \
 				gcd = i; \
@@ -44,53 +44,6 @@ static int rga_set_feature(struct rga_req *rga_base)
 		feature |= RGA_NN_QUANTIZE;
 
 	return feature;
-}
-
-static bool rga_check_csc_constant(const struct rga_hw_data *data, struct rga_req *rga_base,
-				   uint32_t mode, uint32_t flag)
-{
-	if (mode & flag)
-		return true;
-
-	if ((rga_base->full_csc.flag & 0x1) && (data->feature & RGA_FULL_CSC))
-		return true;
-
-	return false;
-}
-
-static bool rga_check_csc(const struct rga_hw_data *data, struct rga_req *rga_base)
-{
-	switch (rga_base->yuv2rgb_mode) {
-	case 0x1:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_y2r_mode, RGA_MODE_CSC_BT601L);
-	case 0x2:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_y2r_mode, RGA_MODE_CSC_BT601F);
-	case 0x3:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_y2r_mode, RGA_MODE_CSC_BT709);
-	case 0x1 << 2:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_r2y_mode, RGA_MODE_CSC_BT601F);
-	case 0x2 << 2:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_r2y_mode, RGA_MODE_CSC_BT601L);
-	case 0x3 << 2:
-		return rga_check_csc_constant(data, rga_base,
-					      data->csc_r2y_mode, RGA_MODE_CSC_BT709);
-	default:
-		break;
-	}
-
-	if ((rga_base->full_csc.flag & 0x1)) {
-		if (data->feature & RGA_FULL_CSC)
-			return true;
-		else
-			return false;
-	}
-
-	return true;
 }
 
 static bool rga_check_resolution(const struct rga_rect_range *range, int width, int height)
@@ -367,13 +320,6 @@ int rga_job_assign(struct rga_job *job)
 		if (!rga_check_dst(data, dst)) {
 			if (DEBUGGER_EN(MSG))
 				pr_info("core = %d, break on rga_check_dst",
-					scheduler->core);
-			continue;
-		}
-
-		if (!rga_check_csc(data, rga_base)) {
-			if (DEBUGGER_EN(MSG))
-				pr_info("core = %d, break on rga_check_csc",
 					scheduler->core);
 			continue;
 		}

@@ -529,49 +529,20 @@ const char *rga_get_rotate_mode_str(uint8_t mode)
 	}
 }
 
-const char *rga_get_blend_mode_str(enum rga_alpha_blend_mode mode)
+const char *rga_get_blend_mode_str(uint16_t alpha_rop_flag,
+				   uint16_t alpha_mode_0,
+				   uint16_t alpha_mode_1)
 {
-	switch (mode) {
-	case RGA_ALPHA_NONE:
+	if (alpha_rop_flag == 0) {
 		return "no blend";
-
-	case RGA_ALPHA_BLEND_SRC:
-		return "src";
-
-	case RGA_ALPHA_BLEND_DST:
-		return "dst";
-
-	case RGA_ALPHA_BLEND_SRC_OVER:
-		return "src-over";
-
-	case RGA_ALPHA_BLEND_DST_OVER:
-		return "dst-over";
-
-	case RGA_ALPHA_BLEND_SRC_IN:
-		return "src-in";
-
-	case RGA_ALPHA_BLEND_DST_IN:
-		return "dst-in";
-
-	case RGA_ALPHA_BLEND_SRC_OUT:
-		return "src-out";
-
-	case RGA_ALPHA_BLEND_DST_OUT:
-		return "dst-out";
-
-	case RGA_ALPHA_BLEND_SRC_ATOP:
-		return "src-atop";
-
-	case RGA_ALPHA_BLEND_DST_ATOP:
-		return "dst-atop";
-
-	case RGA_ALPHA_BLEND_XOR:
-		return "xor";
-
-	case RGA_ALPHA_BLEND_CLEAR:
-		return "clear";
-
-	default:
+	} else if (alpha_rop_flag == 0x9) {
+		if (alpha_mode_0 == 0x381A && alpha_mode_1 == 0x381A)
+			return "105 src + (1-src.a)*dst";
+		else if (alpha_mode_0 == 0x483A && alpha_mode_1 == 0x483A)
+			return "405 src.a * src + (1-src.a) * dst";
+		else
+			return "check reg for more imformation";
+	} else {
 		return "check reg for more imformation";
 	}
 }
@@ -601,20 +572,6 @@ const char *rga_get_mmu_type_str(enum rga_mmu mmu_type)
 		return "RK_IOMMU";
 	default:
 		return "NONE_MMU";
-	}
-}
-
-const char *rga_get_core_name(enum RGA_SCHEDULER_CORE core)
-{
-	switch (core) {
-	case RGA_SCHEDULER_RGA3_CORE0:
-		return "RGA3_core0";
-	case RGA_SCHEDULER_RGA3_CORE1:
-		return "RGA3_core1";
-	case RGA_SCHEDULER_RGA2_CORE0:
-		return "RGA2_core0";
-	default:
-		return "unknown_core";
 	}
 }
 
