@@ -1,0 +1,461 @@
+#define CAMERA_J1  //U19
+//#define CAMERA_J2  //U16
+//#define CAMERA_J3  //U7008
+
+#if defined(CAMERA_J1)
+&csi2_dphy0_hw {
+    status = "okay";
+};
+
+&csi2_dphy0 {
+    status = "okay";
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipidphy0_in_ucam0: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&ov5695_out_1>;
+                data-lanes = <1 2>;
+            }; 
+            mipidphy0_in_ucam0_ov13850: endpoint@2 {
+                reg = <2>;
+                remote-endpoint = <&ov13850_out_1>;
+                data-lanes = <1 2 3 4>;
+            };
+        };
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            csidphy0_out: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&mipi2_csi2_input>;
+            };
+        };
+    };
+};
+
+&i2c3 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c3m1_xfer>;
+
+    ov5695_1: ov5695@36 {
+        status = "okay";
+        compatible = "ovti,ov5695";
+        reg = <0x36>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera3_clk>;
+        reset-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio1 RK_PC6 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "default";
+        rockchip,camera-module-lens-name = "default";
+        port {
+            ov5695_out_1: endpoint {
+                remote-endpoint = <&mipidphy0_in_ucam0>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+    ov13850_1: ov13850@10 {
+        status = "okay";
+        compatible = "otvi,ov13850";
+        reg = <0x10>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M3>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera3_clk>;
+        reset-gpios = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio1 RK_PC6 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <0>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+        rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+        port {
+            ov13850_out_1: endpoint {
+                remote-endpoint = <&mipidphy0_in_ucam0_ov13850>;
+                data-lanes = <1 2 3 4>;
+            };
+        };
+    };
+};
+
+&mipi2_csi2 {
+    status = "okay";
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            mipi2_csi2_input: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&csidphy0_out>;
+            };
+        };
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            mipi2_csi2_output: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&cif_mipi_in2>;
+            };
+        };
+    };
+};
+
+&rkcif_mipi_lvds2 {
+    status = "okay";
+    port {
+        cif_mipi_in2: endpoint {
+            remote-endpoint = <&mipi2_csi2_output>;
+        };
+    };
+};
+
+&rkcif_mipi_lvds2_sditf {
+    status = "okay";
+    port {
+        mipi2_lvds_sditf: endpoint {
+            remote-endpoint = <&isp0_vir1>;
+        };
+    };
+};
+
+&rkisp0_vir1 {
+    status = "okay";
+    port {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        isp0_vir1: endpoint@0 {
+            reg = <0>;
+            remote-endpoint = <&mipi2_lvds_sditf>;
+        };
+    };
+};
+
+#endif
+
+#if defined(CAMERA_J2)
+&csi2_dcphy0 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipidphy1_in_ucam0: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&ov5695_out_2>;
+                data-lanes = <1 2>;
+            }; 
+            mipidphy1_in_ucam0_ov13850: endpoint@2 {
+                reg = <2>;
+                remote-endpoint = <&ov13850_out_2>;
+                data-lanes = <1 2>;
+            };
+        };
+
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            csidcphy0_out: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&mipi0_csi2_input>;
+            };
+        };
+    };
+};
+
+&i2c4 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c4m3_xfer>;
+
+    ov5695_2: ov5695@36 {
+        status = "okay";
+        compatible = "ovti,ov5695";
+        reg = <0x36>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera1_clk>;
+        reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <1>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "default";
+        rockchip,camera-module-lens-name = "default";
+        port {
+            ov5695_out_2: endpoint {
+                remote-endpoint = <&mipidphy1_in_ucam0>;
+                data-lanes = <1 2>;
+            };
+        };
+
+    };
+    ov13850_2: ov13850@10 {
+        status = "okay";
+        compatible = "otvi,ov13850";
+        reg = <0x10>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera1_clk>;
+        reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio1 RK_PA6 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <1>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+        rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+        port {
+            ov13850_out_2: endpoint {
+                remote-endpoint = <&mipidphy1_in_ucam0_ov13850>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+};
+
+&mipi0_csi2 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi0_csi2_input: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&csidcphy0_out>;
+            };
+        };
+
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi0_csi2_output: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&cif_mipi_in0>;
+            };
+        };
+    };
+};
+
+&rkcif_mipi_lvds {
+    status = "okay";
+
+    port {
+        cif_mipi_in0: endpoint {
+            remote-endpoint = <&mipi0_csi2_output>;
+        };
+    };
+};
+
+&rkcif_mipi_lvds_sditf {
+    status = "okay";
+
+    port {
+        mipi_lvds_sditf: endpoint {
+            remote-endpoint = <&isp1_in1>;
+        };
+    };
+};
+
+&rkisp0_vir0 {
+    status = "okay";
+
+    port {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        isp1_in1: endpoint@0 {
+            reg = <0>;
+            remote-endpoint = <&mipi_lvds_sditf>;
+        };
+    };
+};
+#endif
+
+#if defined(CAMERA_J3)
+&csi2_dcphy1 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipidphy2_in_ucam0: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&ov5695_out_3>;
+                data-lanes = <1 2>;
+            }; 
+            mipidphy2_in_ucam0_ov13850: endpoint@2 {
+                reg = <2>;
+                remote-endpoint = <&ov13850_out_3>;
+                data-lanes = <1 2>;
+            };
+        };
+
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            csidcphy1_out: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&mipi1_csi2_input>;
+            };
+        };
+    };
+};
+
+&i2c1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c1m2_xfer>;
+    ov5695_3: ov5695@36 {
+        status = "okay";
+        compatible = "ovti,ov5695";
+        reg = <0x36>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera4_clk>;
+        reset-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_LOW>;
+        pwdn-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <2>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "default";
+        rockchip,camera-module-lens-name = "default";
+        port {
+            ov5695_out_3: endpoint {
+                remote-endpoint = <&mipidphy2_in_ucam0>;
+                data-lanes = <1 2>;
+            };
+        };
+
+    };
+    ov13850_3: ov13850@10 {
+        status = "okay";
+        compatible = "otvi,ov13850";
+        reg = <0x10>;
+        clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+        clock-names = "xvclk";
+        power-domains = <&power RK3588_PD_VI>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&mipim0_camera4_clk>;
+        reset-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+        pwdn-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+        rockchip,camera-module-index = <2>;
+        rockchip,camera-module-facing = "back";
+        rockchip,camera-module-name = "CMK-CT0116"; //"ZC-OV13850R2A-V1";
+        rockchip,camera-module-lens-name = "Largan-50013A1"; //"Largan-50064B31";
+        port {
+            ov13850_out_3: endpoint {
+                remote-endpoint = <&mipidphy2_in_ucam0_ov13850>;
+                data-lanes = <1 2>;
+            };
+        };
+    };
+};
+
+&mipi1_csi2 {
+    status = "okay";
+
+    ports {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        port@0 {
+            reg = <0>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi1_csi2_input: endpoint@1 {
+                reg = <1>;
+                remote-endpoint = <&csidcphy1_out>;
+            };
+        };
+
+        port@1 {
+            reg = <1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            mipi1_csi2_output: endpoint@0 {
+                reg = <0>;
+                remote-endpoint = <&cif_mipi_in1>;
+            };
+        };
+    };
+};
+
+&rkcif_mipi_lvds1 {
+    status = "okay";
+
+    port {
+        cif_mipi_in1: endpoint {
+            remote-endpoint = <&mipi1_csi2_output>;
+        };
+    };
+};
+
+&rkcif_mipi_lvds1_sditf {
+    status = "okay";
+
+    port {
+        mipi1_lvds_sditf: endpoint {
+            remote-endpoint = <&isp1_in0>;
+        };
+    };
+};
+
+&rkisp1_vir0 {
+    status = "okay";
+
+    port {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        isp1_in0: endpoint@0 {
+            reg = <0>;
+            remote-endpoint = <&mipi1_lvds_sditf>;
+        };
+    };
+};
+#endif
+

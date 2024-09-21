@@ -1,0 +1,507 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2022 Rockchip Electronics Co., Ltd.
+ *
+ */
+
+/dts-v1/;
+
+#include "dt-bindings/usb/pd.h"
+#include "rk3588s.dtsi"
+#include "topeet-rk3588s-linux.dtsi"
+#include "rk3588-rk806-single.dtsi"
+#include "rk3588-linux.dtsi"
+#include "topeet-screen-lcds.dts"
+#include "topeet-camera-config.dtsi"
+
+/ {
+	model = "TOPEET RK3588S LP4X Board";
+	compatible = "rockchip,rk3588";
+	
+	//usb-c供电使能
+	vbus5v0_typec: vbus5v0-typec {
+		compatible = "regulator-fixed";
+		regulator-name = "vbus5v0_typec";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio4 RK_PA5 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&typec5v_pwren>;
+	};
+
+	//LCD屏幕供电使能
+	vcc3v3_lcd_n: vcc3v3-lcd0-n {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_lcd0_n";
+		regulator-boot-on;
+		enable-active-high;
+		gpio = <&gpio4 RK_PA3 GPIO_ACTIVE_HIGH>;
+	};
+
+	//USB2.0和USB3.0供电使能
+	vcc5v0_host: vcc5v0-host {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_host";
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio4 RK_PB5 GPIO_ACTIVE_HIGH>;
+	};
+
+	//TF卡供电使能
+	vcc_3v3_sd_s0: vcc-3v3-sd-s0 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_sd_s0";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio4 RK_PB4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
+	// ADC按键
+	adc_keys: adc-keys {
+			compatible = "adc-keys";
+			io-channels = <&saradc 1>;
+			io-channel-names = "buttons";
+			keyup-threshold-microvolt = <1800000>;
+			poll-interval = <100>;
+
+			vol-up-key {
+					label = "volume up";
+					linux,code = <KEY_VOLUMEUP>;
+					press-threshold-microvolt = <17000>;
+			};
+
+			vol-down-key {
+					label = "volume down";
+					linux,code = <KEY_VOLUMEDOWN>;
+					press-threshold-microvolt = <417000>;
+			};
+
+			menu-key {
+					label = "menu";
+					linux,code = <KEY_MENU>;
+					press-threshold-microvolt = <890000>;
+			};
+
+			back-key {
+					label = "back";
+					linux,code = <KEY_BACK>;
+					press-threshold-microvolt = <1235000>;
+			};
+	};
+	
+	// 板载声卡
+	es8388_sound: es8388-sound {
+		status = "okay";
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip-es8388";
+		//hp-det-gpio = <&gpio1 RK_PC0 GPIO_ACTIVE_LOW>;
+		io-channels = <&saradc 3>;
+		io-channel-names = "adc-detect";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+		spk-con-gpio = <&gpio4 RK_PA4 GPIO_ACTIVE_HIGH>;
+		rockchip,format = "i2s";
+		rockchip,mclk-fs = <256>;
+		rockchip,cpu = <&i2s0_8ch>;
+		rockchip,codec = <&es8388>;
+		rockchip,audio-routing =
+			"Headphone", "LOUT1",
+			"Headphone", "ROUT1",
+			"Speaker", "LOUT2",
+			"Speaker", "ROUT2",
+			"Headphone", "Headphone Power",
+			"Headphone", "Headphone Power",
+			"Speaker", "Speaker Power",
+			"Speaker", "Speaker Power",
+			"LINPUT1", "Main Mic",
+			"LINPUT2", "Main Mic",
+			"RINPUT1", "Headset Mic",
+			"RINPUT2", "Headset Mic";
+		pinctrl-names = "default";
+		play-pause-key {
+			label = "playpause";
+			linux,code = <KEY_PLAYPAUSE>;
+			press-threshold-microvolt = <2000>;
+		};
+	};
+
+        //耳机插入检测
+        rk_headset: rk-headset {
+                status = "okay";
+                compatible = "rockchip_headset";
+                headset_gpio = <&gpio1 RK_PC0 GPIO_ACTIVE_LOW>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&hp_det>;
+                io-channels = <&saradc 3>;
+        };
+	
+	//风扇
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		#cooling-cells = <2>;
+		pwms = <&pwm9 0 50000 0>;
+	};
+};
+
+
+&i2c7 {
+	status = "okay";
+	pinctrl-0 = <&i2c7m0_xfer>;
+    //es8388声卡
+        es8388: es8388@11 {
+                status = "okay";
+                #sound-dai-cells = <0>;
+                compatible = "everest,es8388", "everest,es8323";
+                reg = <0x11>;
+                clocks = <&mclkout_i2s0>;
+                clock-names = "mclk";
+                assigned-clocks = <&mclkout_i2s0>;
+                assigned-clock-rates = <12288000>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&i2s0_mclk>;
+        };	
+
+};
+
+// 使能板载声卡的i2S
+&i2s0_8ch {
+	status = "okay";
+};
+
+&i2c6 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c6m3_xfer>;
+
+	// RTC时钟模块
+	hym8563: hym8563@51 {
+		compatible = "haoyu,hym8563";
+		reg = <0x51>;
+		#clock-cells = <0>;
+		clock-frequency = <32768>;
+		clock-output-names = "hym8563";
+		pinctrl-names = "default";
+		pinctrl-0 = <&hym8563_int>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PB0 IRQ_TYPE_LEVEL_LOW>;
+		wakeup-source;
+		status = "okay";
+	};
+	
+	// USB Type-C 控制器
+	usbc0: fusb302@22 {
+		compatible = "fcs,fusb302";
+		reg = <0x22>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PC4 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&usbc0_int>;
+		vbus-supply = <&vbus5v0_typec>;
+		status = "okay";
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				usbc0_role_sw: endpoint@0 {
+					remote-endpoint = <&dwc3_0_role_switch>;
+				};
+			};
+		};
+
+		usb_con: connector {
+			compatible = "usb-c-connector";
+			label = "USB-C";
+			data-role = "dual";
+			power-role = "dual";
+			try-power-role = "sink";
+			op-sink-microwatt = <1000000>;
+			sink-pdos = <PDO_FIXED(5000, 1000, PDO_FIXED_USB_COMM)>;
+			source-pdos = <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
+
+			altmodes{
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				altmode@0 {
+					reg = <0>;
+					svid = <0xff01>;
+					vdo = <0xffffffff>;
+				};
+			};
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					usbc0_orien_sw: endpoint {
+						remote-endpoint = <&usbdp_phy0_orientation_switch>;
+					};
+				};
+
+				port@1 {
+					reg = <1>;
+
+					dp_altmode_mux: endpoint {
+						remote-endpoint = <&usbdp_phy0_dp_altmode_mux>;
+					};
+				};
+			};
+		};
+	};
+};
+
+// PCIE 2.0使能 固态硬盘
+&combphy0_ps {
+	status = "okay";
+};
+
+&pcie2x1l2 {
+	//reset-gpios = <&gpio4 RK_PC1 GPIO_ACTIVE_HIGH>;
+	//rockchip,skip-scan-in-resume;
+	status = "okay";
+};
+
+//蜂鸣器
+&pwm5 {
+	pinctrl-0 = <&pwm5m1_pins>;
+	status = "okay";
+};
+
+//有线网卡配置
+&gmac1 {
+	/* Use rgmii-rxid mode to disable rx delay inside Soc */
+	phy-mode = "rgmii-rxid";
+	clock_in_out = "output";
+
+	snps,reset-gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	/* Reset time is 20ms, 100ms for rtl8211f */
+	snps,reset-delays-us = <0 20000 100000>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1_miim
+		&gmac1_tx_bus2
+		&gmac1_rx_bus2
+		&gmac1_rgmii_clk
+		&gmac1_rgmii_bus
+		//&eth1_pins
+		&gmac1_clkinout>;
+
+	tx_delay = <0x44>;
+	/* rx_delay = <0x3f>; */
+
+	phy-handle = <&rgmii_phy1>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy1: phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x1>;
+	};
+};
+/* end of gmac */
+
+// TF卡使能
+&sdmmc {
+	status = "okay";
+	vmmc-supply = <&vcc_3v3_sd_s0>;
+};
+
+/* type-C 配置*/
+&u2phy0_otg {
+	status = "okay";
+	rockchip,typec-vbus-det;
+};
+
+&usbdp_phy0 {
+	orientation-switch;
+	svid = <0xff01>;
+	sbu1-dc-gpios = <&gpio4 RK_PA0 GPIO_ACTIVE_HIGH>;
+	sbu2-dc-gpios = <&gpio4 RK_PA1 GPIO_ACTIVE_HIGH>;
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		usbdp_phy0_orientation_switch: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&usbc0_orien_sw>;
+		};
+
+		usbdp_phy0_dp_altmode_mux: endpoint@1 {
+			reg = <1>;
+			remote-endpoint = <&dp_altmode_mux>;
+		};
+	};
+};
+
+&usbdrd_dwc3_0 {
+	dr_mode = "otg";
+	usb-role-switch;
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		dwc3_0_role_switch: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&usbc0_role_sw>;
+		};
+	};
+};
+/* end of type-C */
+
+// USB 2.0 HOST 配置
+&u2phy2_host {
+	status = "okay";
+	phy-supply = <&vcc5v0_host>;
+};
+
+&u2phy3_host {
+	status = "okay";
+	phy-supply = <&vcc5v0_host>;
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usb_host1_ehci {
+	status = "okay";
+};
+
+&usb_host1_ohci {
+	status = "okay";
+};
+/* end of usb 2.0 */
+
+&usbdrd_dwc3_0 {
+	usb-role-switch;
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		dwc3_0_role_switch: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&usbc0_role_sw>;
+		};
+	};
+};
+
+// USB 3.0 配置
+&combphy2_psu {
+	status = "okay";
+};
+
+&usbhost3_0 {
+	status = "okay";
+};
+
+&usbhost_dwc3_0 {
+	status = "okay";
+	dr_mode = "host";
+};
+/* end of USB 3.0 */
+
+
+// RS485 对应的串口使能
+&uart9 {
+	status = "okay";
+	pinctrl-0 = <&uart9m2_xfer>;
+};
+
+// 使能硬件看门狗
+&wdt {
+	status = "okay";
+};
+
+// CAN接口相关配置
+&can1 {
+        compatible = "rockchip,can-2.0";
+        status = "disabled";
+        assigned-clocks = <&cru CLK_CAN1>;
+        assigned-clock-rates = <150000000>;  //If can bitrate lower than 3M,the clock-rates should set 100M,else set 200M.
+        pinctrl-names = "default";
+        pinctrl-0 = <&can1m1_pins>;
+};
+
+
+// 摄像头相关配置
+&mipi_dcphy0 {
+        status = "okay";
+};
+
+&mipi_dcphy1 {
+        status = "okay";
+};
+
+&rkcif {
+        status = "okay";
+};
+
+&rkcif_mmu {
+        status = "okay";
+};
+
+&rkisp0 {
+        status = "okay";
+};
+
+&isp0_mmu {
+        status = "okay";
+};
+
+&rkisp1 {
+        status = "okay";
+};
+
+&isp1_mmu {
+        status = "okay";
+};
+/* end camera */
+
+&pinctrl {
+        headphone {
+                hp_det: hp-det {
+                        rockchip,pins = <1 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+                };
+        };
+
+        hym8563 {
+                hym8563_int: hym8563-int {
+                        rockchip,pins = <0 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+                };
+        };
+
+        usb-typec {
+                usbc0_int: usbc0-int {
+                        rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_up>;
+                };
+
+                typec5v_pwren: typec5v-pwren {
+                        rockchip,pins = <1 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+                };
+        };
+	
+	lcd0 {
+                lcd0_rst_gpio:lcd0-rst-gpio {
+                        rockchip,pins = <3 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+                };
+        };
+
+};
