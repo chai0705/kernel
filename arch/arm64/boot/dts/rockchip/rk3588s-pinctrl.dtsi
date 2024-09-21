@@ -441,7 +441,7 @@
 				/* gmac1_mdio */
 				<3 RK_PC3 1 &pcfg_pull_none>;
 		};
-		
+
 		/omit-if-no-ref/
 		gmac1_clkinout: gmac1-clkinout {
 			rockchip,pins =
