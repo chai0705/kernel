@@ -1,0 +1,344 @@
+#include "rk3568-topeet-mini.dtsi"
+#include "rk3568-linux.dtsi"
+#include "rk3568-topeet-mini-screen-lcds.dtsi"
+
+/ {
+        model = "TOPEET RK3568 EVB1 DDR4 V10 Board";
+        compatible = "rockchip,rk3568-evb1-ddr4-v10", "rockchip,rk3568";
+
+	//ADC 按键
+        adc_keys: adc-keys {
+                compatible = "adc-keys";
+                io-channels = <&saradc 0>;
+                io-channel-names = "buttons";
+                keyup-threshold-microvolt = <1800000>;
+                poll-interval = <100>;
+
+                vol-up-key {
+                        label = "volume up";
+                        linux,code = <KEY_VOLUMEUP>;
+                        press-threshold-microvolt = <1750>;
+                };
+
+                vol-down-key {
+                        label = "volume down";
+                        linux,code = <KEY_VOLUMEDOWN>;
+                        press-threshold-microvolt = <297500>;
+                };
+
+                menu-key {
+                        label = "menu";
+                        linux,code = <KEY_MENU>;
+                        press-threshold-microvolt = <980000>;
+                };
+
+                back-key {
+                        label = "back";
+                        linux,code = <KEY_BACK>;
+                        press-threshold-microvolt = <1305500>;
+                };
+        };
+
+        //485 使能引脚  
+        rk_485_ctl: rk-485-ctl {
+                compatible = "topeet,rs485_ctl";
+                gpios = <&gpio3 RK_PB5 GPIO_ACTIVE_HIGH>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&rk_485_gpio>;
+        };
+
+	//LED	
+        leds: leds {
+                compatible = "gpio-leds";
+                work_led: work {
+                        gpios = <&gpio0 RK_PB7 GPIO_ACTIVE_HIGH>;
+                        linux,default-trigger = "heartbeat";
+                        default-state = "on";
+                };
+        };
+
+	//风扇
+        fan: pwm-fan {
+                compatible = "pwm-fan";
+                cooling-min-state = <0>;
+                cooling-max-state = <3>;
+                #cooling-cells = <2>;
+                pwms = <&pwm7 0 10000 0>;
+                cooling-levels = <100 150 200 250>;
+        };
+};
+
+&i2c2 {
+        status = "okay";
+        pinctrl-0 = <&i2c2m1_xfer>;
+	
+	    //5695摄像头
+	    ov5695: ov5695@36 {
+                status = "okay";
+                compatible = "ovti,ov5695";
+                reg = <0x36>;
+                clocks = <&cru CLK_CIF_OUT>;
+                clock-names = "xvclk";
+                power-domains = <&power RK3568_PD_VI>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&cif_clk>;
+                reset-gpios = <&gpio3 RK_PD4 GPIO_ACTIVE_LOW>;
+                pwdn-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+                rockchip,camera-module-index = <0>;
+                rockchip,camera-module-facing = "back";
+                rockchip,camera-module-name = "TongJu";
+                rockchip,camera-module-lens-name = "CHT842-MD";
+                port {
+                        ov5695_out: endpoint {
+                                remote-endpoint = <&mipi_in_ucam2>;
+                                data-lanes = <1 2>;
+                        };
+                };
+        };
+	   
+            //13850摄像头
+	    ov13850: ov13850@10 {
+                status = "okay";
+                 compatible = "ovti,ov13850";
+                 reg = <0x10>;
+                 clocks = <&cru CLK_CIF_OUT>;
+                 clock-names = "xvclk";
+                 power-domains = <&power RK3568_PD_VI>;
+                 pinctrl-names = "default";
+                 pinctrl-0 = <&cif_clk>;
+                 reset-gpios = <&gpio3 RK_PD4 GPIO_ACTIVE_HIGH>;
+                 pwdn-gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+                 rockchip,camera-module-index = <0>;
+                 rockchip,camera-module-facing = "back";
+                 rockchip,camera-module-name = "ZC-OV13850R2A-V1";
+                 rockchip,camera-module-lens-name = "Largan-50064B31";
+                 port {
+                         ov13850_out: endpoint {
+                                 remote-endpoint = <&mipi_in_ucam3>;
+                                 data-lanes = <1 2 3 4>;
+                         };
+                 };
+         };
+
+};
+
+//摄像头配置
+&combphy0_us {
+        status = "okay";
+};
+
+&combphy1_usq {
+        status = "okay";
+};
+
+&combphy2_psq {
+        status = "okay";
+};
+
+&csi2_dphy_hw {
+        status = "okay";
+};
+
+&csi2_dphy0 {
+        status = "okay";
+
+        ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                port@0 {
+                        reg = <0>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+                        mipi_in_ucam2: endpoint@3 {
+                                reg = <3>;
+                                remote-endpoint = <&ov5695_out>;
+                                data-lanes = <1 2>;
+                        };
+                        mipi_in_ucam3: endpoint@4 {
+                                reg = <4>;
+                                remote-endpoint = <&ov13850_out>;
+                                data-lanes = <1 2 3 4>;
+                        };
+                };
+                port@1 {
+                        reg = <1>;
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        csidphy_out: endpoint@0 {
+                                reg = <0>;
+                                remote-endpoint = <&isp0_in>;
+                        };
+                };
+        };
+};
+
+&rkisp {
+        status = "okay";
+};
+
+&rkisp_mmu {
+        status = "okay";
+};
+
+&rkisp_vir0 {
+        status = "okay";
+
+        port {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                isp0_in: endpoint@0 {
+                        reg = <0>;
+                        remote-endpoint = <&csidphy_out>;
+                };
+        };
+};
+
+//RTC 芯片使能
+&i2c5 {
+        status = "okay";
+
+        rx8010: rx8010@32 {
+                compatible = "epson,rx8010";
+                reg = <0x32>;
+                status = "okay";
+                #clock-cells = <0>;
+        };
+};
+
+//网口0
+&gmac0 {
+        phy-mode = "rgmii";
+        clock_in_out = "input";
+        snps,reset-gpio = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
+        snps,reset-active-low;
+        /* Reset time is 20ms, 100ms for rtl8211f */
+        snps,reset-delays-us = <0 20000 100000>;
+
+        assigned-clocks = <&cru SCLK_GMAC0_RX_TX>, <&cru SCLK_GMAC0>;
+        assigned-clock-parents = <&cru SCLK_GMAC0_RGMII_SPEED>, <&gmac0_clkin>;
+        assigned-clock-rates = <0>, <125000000>;
+
+        pinctrl-names = "default";
+	pinctrl-0 = <&gmac0_miim
+                &gmac0_tx_bus2
+                &gmac0_rx_bus2
+                &gmac0_rgmii_clk
+                &gmac0_rgmii_bus
+                &gmac0_clkinout>;
+
+
+        tx_delay = <0x3c>;
+        rx_delay = <0x2f>;
+
+        phy-handle = <&rgmii_phy0>;
+        status = "okay";
+};
+
+//网口1
+&gmac1 {
+        phy-mode = "rgmii";
+        clock_in_out = "input";
+        snps,reset-gpio = <&gpio3 RK_PB0 GPIO_ACTIVE_LOW>;
+        snps,reset-active-low;
+        /* Reset time is 20ms, 100ms for rtl8211f */
+        snps,reset-delays-us = <0 20000 100000>;
+
+        assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+        assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>, <&gmac1_clkin>;
+        assigned-clock-rates = <0>, <125000000>;
+
+        pinctrl-names = "default";
+        pinctrl-0 = <&gmac1m1_miim
+                &gmac1m1_tx_bus2
+                &gmac1m1_rx_bus2
+                &gmac1m1_rgmii_clk
+                &gmac1m1_rgmii_bus
+                &gmac1m1_clkinout>;
+
+        tx_delay = <0x4f>;
+        rx_delay = <0x26>;
+
+        phy-handle = <&rgmii_phy1>;
+        status = "okay";
+};
+
+&mdio0 {
+        rgmii_phy0: phy@0 {
+                compatible = "ethernet-phy-ieee802.3-c22";
+                reg = <0x0>;
+        };
+};
+
+&mdio1 {
+        rgmii_phy1: phy@0 {
+                compatible = "ethernet-phy-ieee802.3-c22";
+                reg = <0x0>;
+        };
+};
+
+
+//PCIE3.0
+&pcie30phy {
+        status = "okay";
+};
+
+&pcie3x2 {
+        reset-gpios = <&gpio2 RK_PD6 GPIO_ACTIVE_HIGH>;
+        vpcie3v3-supply = <&vcc3v3_pcie>;
+        status = "okay";
+};
+
+//PCIE2.0
+&sata2 {
+        status = "disabled";
+};
+&pcie2x1 {
+        status = "okay";
+        vpcie3v3-supply = <&vcc3v3_pcie>;
+};
+
+//can接口
+&can1 {
+        status = "okay";
+                compatible = "rockchip,canfd-1.0";
+        assigned-clocks = <&cru CLK_CAN1>;
+        assigned-clock-rates = <150000000>;  //If can bitrate lower than 3M,the clock-rates should set 100M,else set 200M.
+        pinctrl-names = "default";
+        pinctrl-0 = <&can1m1_pins>;
+};
+
+//串口4
+&uart4 {
+            status = "okay";
+                pinctrl-names = "default";
+                pinctrl-0 = <&uart4m1_xfer>;
+};
+
+//串口7
+&uart7 {
+                status ="okay";
+                pinctrl-name = "default";
+                pinctrl-0 = <&uart7m1_xfer>;
+};
+
+//串口9
+&uart9 {
+            status = "okay";
+                pinctrl-names = "default";
+                pinctrl-0 = <&uart9m1_xfer>;
+};
+
+//风扇要用到的PWM7
+&pwm7 {
+        status = "okay";
+};
+
+&pinctrl {
+        rk_485{
+                rk_485_gpio:rk-485-gpio {
+                        rockchip,pins = <3  RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
+                };
+        };
+};

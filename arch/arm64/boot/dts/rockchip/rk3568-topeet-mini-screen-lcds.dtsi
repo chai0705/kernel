@@ -1,0 +1,615 @@
+#define LCD_TYPE_MIPI       //in vp 1
+//#define LCD_TYPE_LVDS_10_1_1024X600  //in vp 2
+//#define LCD_TYPE_LVDS_10_1_1280X800_gt9271 //in vp 2
+#define LCD_TYPE_LVDS_7_0   //in vp 2
+//#define LCD_TYPE_EDP_VGA  //in vp 0
+#define LCD_TYPE_HDMI_VP0   //hdmi in vp 0
+//#define LCD_TYPE_HDMI_VP1   //hdmi in vp 1
+
+
+/ { 
+        backlight: backlight {
+                compatible = "pwm-backlight";
+                brightness-levels = <
+                          0  20  20  21  21  22  22  23
+                         23  24  24  25  25  26  26  27
+                         27  28  28  29  29  30  30  31
+                         31  32  32  33  33  34  34  35
+                         35  36  36  37  37  38  38  39
+                         40  41  42  43  44  45  46  47
+                         48  49  50  51  52  53  54  55
+                         56  57  58  59  60  61  62  63
+                         64  65  66  67  68  69  70  71
+                         72  73  74  75  76  77  78  79
+                         80  81  82  83  84  85  86  87
+                         88  89  90  91  92  93  94  95
+                         96  97  98  99 100 101 102 103
+                        104 105 106 107 108 109 110 111
+                        112 113 114 115 116 117 118 119
+                        120 121 122 123 124 125 126 127
+                        128 129 130 131 132 133 134 135
+                        136 137 138 139 140 141 142 143
+                        144 145 146 147 148 149 150 151
+                        152 153 154 155 156 157 158 159
+                        160 161 162 163 164 165 166 167
+                        168 169 170 171 172 173 174 175
+                        176 177 178 179 180 181 182 183
+                        184 185 186 187 188 189 190 191
+                        192 193 194 195 196 197 198 199
+                        200 201 202 203 204 205 206 207
+                        208 209 210 211 212 213 214 215
+                        216 217 218 219 220 221 222 223
+                        224 225 226 227 228 229 230 231
+                        232 233 234 235 236 237 238 239
+                        240 241 242 243 244 245 246 247
+                        248 249 250 251 252 253 254 255
+                >;
+                default-brightness-level = <200>;
+        };
+
+   lvds_panel: panel {
+		compatible = "simple-panel";
+		status = "disabled";
+		backlight = <&backlight>;
+		power-supply = <&vcc3v3_lcd0_n>;
+		enable-delay-ms = <20>;
+		prepare-delay-ms = <20>;
+		unprepare-delay-ms = <20>;
+		disable-delay-ms = <20>;  		
+		width-mm = <217>;
+		height-mm = <136>;
+    };
+};
+
+&i2c1 {
+    status = "okay";
+	ft5x061:ft5x06@38 {
+				status = "disabled";
+				compatible = "edt,edt-ft5306";
+				reg = <0x38>;
+				touch-gpio = <&gpio0 RK_PB5 IRQ_TYPE_EDGE_RISING>;
+				interrupt-parent = <&gpio0>;
+				interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+				reset-gpio = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
+				touchscreen-size-x = <800>;
+				touchscreen-size-y = <1280>;
+              
+    };
+};
+
+&i2c2 {
+    status = "okay";
+    pinctrl-0 = <&i2c2m1_xfer>;
+	ft5x062:ft5x06@38 {
+				status = "disabled";
+				compatible = "edt,edt-ft5306";
+				reg = <0x38>;
+				touch-gpio = <&gpio0 RK_PB5 IRQ_TYPE_EDGE_RISING>;
+				interrupt-parent = <&gpio0>;
+				interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+				reset-gpio = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
+				touchscreen-size-x = <800>;
+				touchscreen-size-y = <1280>;
+               
+    };
+
+	gt9xx:gt9xx_ts@5d {
+                compatible = "goodix,gt9xx";
+                reg = <0x5d>;
+                interrupt-parent = <&gpio0>;
+                interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+			    pinctrl-names = "default";
+        		pinctrl-0 = <&gt9xx_pins>;
+                reset-gpio = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
+                touch-gpio = <&gpio0 RK_PB5 IRQ_TYPE_EDGE_RISING>;
+                status = "disabled";
+                tp-size = <911>;
+                max-x = <1024>;
+                max-y = <600>;
+
+        };
+
+	gt9271:gt9271_ts@5d {
+
+                compatible = "goodix,gt9271";
+                reg = <0x5d>;
+                interrupt-parent = <&gpio0>;
+                interrupts = <RK_PB5 IRQ_TYPE_LEVEL_LOW>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&gt9xx_pins>;
+                reset-gpio = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
+                touch-gpio = <&gpio0 RK_PB5 IRQ_TYPE_EDGE_RISING>;
+                status = "disabled";
+				tp-size = <9271>;
+			    max-x = <1280>;
+  			    max-y = <800>;
+        };
+
+
+};
+
+&pinctrl {
+	gt9xx {
+		gt9xx_pins: gt9xx-pins {
+			rockchip,pins =
+				<0 RK_PB5 0 &pcfg_pull_up>,
+                <0 RK_PB6 0 &pcfg_pull_none>;
+		};
+	};
+};
+
+
+#if  defined(LCD_TYPE_LVDS_7_0)
+&lvds_panel{
+	status = "okay";
+        bus-format = <MEDIA_BUS_FMT_RGB666_1X7X3_SPWG>;
+        display-timings {
+            native-mode = <&lvds_timing0>;
+            lvds_timing0: lvds-timing0 {
+                clock-frequency = <71900000>;
+                hactive = <800>;
+                vactive = <1280>;
+                hback-porch = <24>;//<100>;
+                hfront-porch = <72>;//<1580>;
+                vback-porch = <10>;//<25>;
+                vfront-porch = <12>;//<10>;
+                hsync-len = <24>;//<10>;
+                vsync-len = <2>;//<4>;
+                hsync-active = <0>;
+                vsync-active = <0>;
+                de-active = <0>;
+                pixelclk-active = <0>;
+            };
+        };
+        ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				dual-lvds-even-pixels;
+				panel_in_lvds: endpoint {
+					remote-endpoint = <&lvds_out_panel>;
+				};
+			};
+		};
+};
+&lvds {
+	status = "disabled";
+    
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds_out_panel: endpoint {
+				remote-endpoint = <&panel_in_lvds>;
+			};
+		};
+	};
+};
+
+&pwm4{
+    status = "okay";
+};
+
+&backlight {
+    status = "okay";
+    pwms = <&pwm4 0 25000 0>;
+};
+
+&lvds {
+    status = "okay";
+};
+
+&lvds_in_vp1{
+    status = "disabled";
+};
+&lvds_in_vp2 {
+	status = "okay";
+};
+&video_phy0{
+    status="okay";
+};
+&route_lvds{
+   // logo,rotate = <0>;
+    status = "okay";
+    connect = <&vp2_out_lvds>;
+};
+
+&ft5x062
+{
+    status = "okay";
+};
+
+#elif defined(LCD_TYPE_LVDS_10_1_1024X600) 
+&lvds_panel {
+	status = "okay";
+        bus-format = <MEDIA_BUS_FMT_RGB666_1X7X3_SPWG>;
+        display-timings { 
+			native-mode = <&lvds_timing0>; 
+			lvds_timing0: lvds-timing0 { 
+				clock-frequency = <53000000>; 
+				hactive = <1024>; 
+				vactive = <600>; 
+				hback-porch = <160>;//<100>; 
+				hfront-porch = <24>;//<1580>; 
+				vback-porch = <24>;//<25>; 
+				vfront-porch = <2>;//<10>; 
+				hsync-len = <116>;//<10>; DRM_PANEL_SIMPLE
+                vsync-len = <3>;
+                hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+				}; 
+		}; 
+        ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				dual-lvds-even-pixels;
+				panel_in_lvds: endpoint {
+					remote-endpoint = <&lvds_out_panel>;
+				};
+			};
+		};
+};
+&lvds {
+	status = "disabled";
+    
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds_out_panel: endpoint {
+				remote-endpoint = <&panel_in_lvds>;
+			};
+		};
+	};
+};
+&pwm4{
+    status = "okay";
+};
+
+&backlight {
+    status = "okay";
+    pwms = <&pwm4 0 25000 0>;
+};
+&lvds {
+    status = "okay";
+};
+
+&lvds_in_vp1{
+    status = "disabled";
+};
+
+&lvds_in_vp2 {
+	status = "okay";
+};
+
+&video_phy0{
+    status="okay";
+};
+
+&route_lvds{
+   // logo,rotate = <0>;
+    status = "okay";
+    connect = <&vp2_out_lvds>;
+};
+
+&gt9xx
+{
+    status = "okay";
+};
+#elif defined(LCD_TYPE_LVDS_10_1_1280X800_gt9271)
+&lvds_panel {
+	status = "okay";
+        bus-format = <MEDIA_BUS_FMT_RGB888_1X7X4_SPWG>;
+          display-timings { 
+			native-mode = <&lvds_timing0>; 
+			lvds_timing0: lvds-timing0 { 
+				clock-frequency = <82421000>; 
+				hactive = <1280>; 
+				vactive = <800>; 
+				hback-porch = <88>;//<100>; 
+				hfront-porch = <132>;//<1580>; 
+				vback-porch = <23>;//<25>; 
+				vfront-porch = <49>;//<10>; 
+				hsync-len = <40>;//<10>; DRM_PANEL_SIMPLE
+                vsync-len = <20>;
+                hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+				}; 
+		}; 
+        ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				dual-lvds-even-pixels;
+				panel_in_lvds: endpoint {
+					remote-endpoint = <&lvds_out_panel>;
+				};
+			};
+		};
+};
+&lvds {
+	status = "disabled";
+    
+	ports {
+		port@1 {
+			reg = <1>;
+			lvds_out_panel: endpoint {
+				remote-endpoint = <&panel_in_lvds>;
+			};
+		};
+	};
+};
+
+&pwm4{
+    status = "okay";
+};
+
+&backlight {
+    status = "okay";
+    pwms = <&pwm4 0 25000 0>;
+};
+
+&lvds {
+    status = "okay";
+};
+
+&lvds_in_vp1{
+    status = "disabled";
+};
+&lvds_in_vp2 {
+	status = "okay";
+};
+&video_phy0{
+    status="okay";
+};
+&route_lvds{
+   // logo,rotate = <0>;
+    status = "okay";
+    connect = <&vp2_out_lvds>;
+};
+
+&gt9271
+{
+    status = "okay";
+};
+#elif defined(LCD_TYPE_MIPI)
+&dsi1 {
+        status = "disabled";
+        //rockchip,lane-rate = <1000>;
+        dsi1_panel: panel@0 {
+                status = "disabled";
+                compatible = "simple-panel-dsi";
+                power-supply = <&vcc3v3_lcd0_n>;
+                reg = <0>;
+                backlight = <&backlight>;
+                reset-delay-ms = <60>;
+                enable-delay-ms = <60>;
+                prepare-delay-ms = <60>;
+                unprepare-delay-ms = <60>;
+                disable-delay-ms = <60>;
+                dsi,flags = <(MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
+                        MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_EOT_PACKET)>;
+                dsi,format = <MIPI_DSI_FMT_RGB888>;
+                dsi,lanes  = <4>;
+                panel-init-sequence = [
+                        29 00 03 E0 AB BA
+                        29 00 03 E1 BA AB
+                        15 00 02 B0 00
+                        29 00 05 B1 10 01 47 FF
+                        29 00 07 B2 0C 0E 04 14 14 14
+                        29 00 04 B3 56 D3 00
+                        29 00 04 B4 22 30 04
+                        15 00 02 B5 00
+                        29 00 08 B6 B0 00 00 10 00 10 00
+                        29 00 09 B7 0E 00 FF 08 08 FF FF 00
+                        29 00 08 B8 05 12 29 49 48 00 00
+                        29 00 27 B9 4D 42 38 31 33 27 2F 1B 36 35 35 53 41 49 3D 3D 33 29 26 4C 42 39 31 33 27 2F 1B 36 35 35 53 41 49 3D 3D 33 29 26
+                        29 00 09 BA 00 00 00 44 24 00 00 00
+                        29 00 04 BB 76 00 00
+                        29 00 03 BC 00 00
+                        29 00 06 BD FF 00 00 00 00
+                        15 00 02 BE 00
+                        29 00 11 C0 98 76 12 34 33 33 44 44 06 04 8A 04 0F 00 00 00
+                        29 00 0B C1 53 94 02 85 06 04 8A 04 54 00
+                        29 00 0D C2 37 09 08 89 08 10 22 21 44 BB 18 00
+                        29 00 17 C3 9C 1D 1E 1F 10 12 0C 0E 05 24 24 24 24 24 24 07 24 24 24 24 24 24
+                        29 00 17 C4 1C 1D 1E 1F 11 13 0D 0F 04 24 24 24 24 24 24 06 24 24 24 24 24 24
+                        29 00 04 C5 E8 85 76
+                        29 00 03 C6 20 20
+                        29 00 17 C7 41 01 0D 11 09 15 19 4F 10 D7 CF 19 1B 1D 03 02 25 30 00 03 FF 00
+                        29 00 07 C8 61 00 31 42 54 16
+                        29 00 06 C9 A1 22 FF Cd 23
+                        29 00 03 CA 4B 43
+                        29 00 05 CC 2E 02 04 08
+                        29 00 09 CD 0E 64 64 20 1E 6B 06 83
+                        29 00 04 D0 27 10 80
+                        29 00 05 D1 00 0D FF 0F
+                        29 00 05 D2 E3 2B 38 00
+                        29 00 0C D4 00 01 00 0E 04 44 08 10 00 07 00
+                        15 00 02 D5 00
+                        29 00 03 D6 00 00
+                        29 00 05 D7 00 00 00 00
+                        29 00 04 E4 08 55 03
+                        29 00 09 E6 00 01 FF FF FF FF FF FF
+                        29 00 04 E7 00 00 00
+                        29 00 08 E8 D5 FF FF FF 00 00 00
+                        15 00 02 E9 FF
+                        29 00 06 F0 12 03 20 00 FF
+                        29 00 1B F1 A6 C8 EA E6 E4 CC E4 BE F0 B2 AA C7 FF 66 98 E3 87 C8 99 C8 8C BE 96 91 8F FF
+                        15 00 02 F3 03
+                        29 00 1B F4 FF FE FC FA F8 F4 F0 E8 E0 D0 C0 A0 80 7F 5F 3F 2F 1F 17 0F 0B 07 05 03 01 00
+                        29 00 1B F5 FF FE FC FA F8 F4 F0 E8 E0 D0 C0 A0 80 7F 5F 3F 2F 1F 17 0F 0B 07 05 03 01 00
+                        29 00 1B F6 FF FE FC FA F8 F4 F0 E8 E0 D0 C0 A0 80 7F 5F 3F 2F 1F 17 0F 0B 07 05 03 01 00
+                        29 00 08 F7 00 00 00 00 00 00 00
+                        29 00 08 F8 00 00 00 00 00 00 00
+                        29 00 08 F9 00 00 00 00 00 00 00
+                        29 00 1A FA 00 84 12 21 48 48 21 12 84 69 69 5A A5 96 96 A5 5A B7 DE ED 7B 7B ED DE B7
+                        29 00 18 FB 00 12 0F FF FF FF 00 38 40 08 70 0B 40 19 50 21 C0 27 60 2D 00 00 0F
+                        29 00 03 E3 20 21
+                        05 C8 01 11
+                        05 14 01 29
+                ];
+
+                panel-exit-sequence = [
+                        05 05 01 28
+                        05 78 01 10
+                ];
+                disp_timings1: display-timings {
+                        native-mode = <&dsi1_timing0>;
+                        dsi1_timing0: timing0 {
+                                clock-frequency = <60000000>;
+                                hactive = <800>;
+                                vactive = <1280>;
+                                hfront-porch = <80>;
+                                hsync-len = <20>;
+                                hback-porch = <80>;
+                                vfront-porch = <20>;
+                                vsync-len = <4>;
+                                vback-porch = <12>;
+                                hsync-active = <0>;
+                                vsync-active = <0>;
+                                de-active = <0>;
+                                pixelclk-active = <0>;
+                        };
+                };
+
+                ports {
+                        #address-cells = <1>;
+                        #size-cells = <0>;
+
+                        port@0 {
+                                reg = <0>;
+                                panel_in_dsi1: endpoint {
+                                        remote-endpoint = <&dsi1_out_panel>;
+                                };
+                        };
+                };
+        };
+
+        ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port@1 {
+                        reg = <1>;
+                        dsi1_out_panel: endpoint {
+                                remote-endpoint = <&panel_in_dsi1>;
+                        };
+                };
+        };
+
+};
+
+&pwm5{
+    status = "okay";
+};
+&backlight{
+    pwms = <&pwm5 0 25000 0>;
+    status = "okay";
+};
+&dsi1{
+    status = "okay";
+};
+&dsi1_panel
+{
+    status = "okay";
+};
+&dsi1_in_vp0 {
+    status = "disabled";
+};
+&dsi1_in_vp1 {
+	status = "okay";
+};
+&ft5x061
+{
+    status = "okay";
+};
+&route_dsi1{
+    status = "okay";
+	connect = <&vp1_out_dsi1>;
+
+};
+&video_phy1{
+    status = "okay";
+};
+
+#elif  defined(LCD_TYPE_HDMI_VP0)
+&hdmi {
+        status = "okay";
+        rockchip,phy-table =
+                <92812500  0x8009 0x0000 0x0270>,
+                <165000000 0x800b 0x0000 0x026d>,
+                <185625000 0x800b 0x0000 0x01ed>,
+                <297000000 0x800b 0x0000 0x01ad>,
+                <594000000 0x8029 0x0000 0x0088>,
+                <000000000 0x0000 0x0000 0x0000>;
+};
+&hdmi_in_vp0 {
+	status = "okay";
+};
+&hdmi_in_vp1 {
+	status = "disabled";
+};
+&hdmi_sound {
+	status = "okay";
+};
+&route_hdmi {
+    status = "okay";
+    connect = <&vp0_out_hdmi>;
+};
+
+#elif  defined(LCD_TYPE_HDMI_VP1)
+&hdmi {
+        status = "okay";
+        rockchip,phy-table =
+                <92812500  0x8009 0x0000 0x0270>,
+                <165000000 0x800b 0x0000 0x026d>,
+                <185625000 0x800b 0x0000 0x01ed>,
+                <297000000 0x800b 0x0000 0x01ad>,
+                <594000000 0x8029 0x0000 0x0088>,
+                <000000000 0x0000 0x0000 0x0000>;
+};
+&hdmi_in_vp0 {
+        status = "disabled";
+};
+&hdmi_in_vp1 {
+        status = "okay";
+};
+&hdmi_sound {
+        status = "okay";
+};
+&route_hdmi {
+    status = "okay";
+    connect = <&vp1_out_hdmi>;
+};
+
+/**********************************************************************/
+#elif  defined(LCD_TYPE_EDP_VGA)
+&edp {
+        hpd-gpios = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+        status = "okay";
+};
+
+&edp_phy {
+        status = "okay";
+};
+
+&edp_in_vp0 {
+        status = "okay";
+};
+
+&edp_in_vp1 {
+        status = "disabled";
+};
+&route_edp {
+        status = "okay";
+        connect = <&vp0_out_edp>;
+};
+
+#endif
