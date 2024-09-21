@@ -1,6 +1,6 @@
-#include "rk3568-topeet-full.dtsi"
+#include "topeet-rk3568-linux.dtsi"
 #include "rk3568-linux.dtsi"
-#include "rk3568-topeet-full-screen-lcds.dtsi"
+#include "topeet-screen-lcds.dts"
 
 / {
         model = "TOPEET RK3568 EVB1 DDR4 V10 Board";
@@ -42,7 +42,7 @@
         //485 使能引脚  
         rk_485_ctl: rk-485-ctl {
                 compatible = "topeet,rs485_ctl";
-                gpios = <&gpio0 RK_PC6 GPIO_ACTIVE_HIGH>;
+                gpios = <&gpio3 RK_PB5 GPIO_ACTIVE_HIGH>;
                 pinctrl-names = "default";
                 pinctrl-0 = <&rk_485_gpio>;
         };
@@ -63,7 +63,7 @@
                 cooling-min-state = <0>;
                 cooling-max-state = <3>;
                 #cooling-cells = <2>;
-                pwms = <&pwm6 0 10000 0>;
+                pwms = <&pwm7 0 10000 0>;
                 cooling-levels = <100 150 200 250>;
         };
 };
@@ -330,15 +330,15 @@
                 pinctrl-0 = <&uart9m1_xfer>;
 };
 
-//风扇要用到的PWM6
-&pwm6 {
+//风扇要用到的PWM7
+&pwm7 {
         status = "okay";
 };
 
 &pinctrl {
         rk_485{
                 rk_485_gpio:rk-485-gpio {
-                        rockchip,pins = <0  RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+                        rockchip,pins = <3  RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
                 };
         };
 };

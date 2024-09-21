@@ -1,9 +1,9 @@
-#define LCD_TYPE_MIPI       //in vp 1
+//#define LCD_TYPE_MIPI       //in vp 1
 //#define LCD_TYPE_LVDS_10_1_1024X600  //in vp 2
-//#define LCD_TYPE_LVDS_10_1_1280X800_gt9271 //in vp 2
-#define LCD_TYPE_LVDS_7_0   //in vp 2
+#define LCD_TYPE_LVDS_10_1_1280X800_gt9271 //in vp 2
+//#define LCD_TYPE_LVDS_7_0   //in vp 2
 //#define LCD_TYPE_EDP_VGA  //in vp 0
-#define LCD_TYPE_HDMI_VP0   //hdmi in vp 0
+//#define LCD_TYPE_HDMI_VP0   //hdmi in vp 0
 //#define LCD_TYPE_HDMI_VP1   //hdmi in vp 1
 
 
