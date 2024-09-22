@@ -1,3 +1,3 @@
 # SPDX-License-Identifier: GPL-2.0
-dtb-$(CONFIG_ARCH_ROCKCHIP) += topeet-rk3568-linux.dts
+dtb-$(CONFIG_ARCH_ROCKCHIP) += topeet-rk3568-linux.dtb
 subdir-y        := $(dts-dirs) overlay
