@@ -65,7 +65,7 @@
 		enable-active-high;
 		vin-supply = <&vcc3v3_sys>;
 	};
-	
+
 	//PCIE2.0供电使能
         vcc3v3_pcie2: gpio-regulator {
                 compatible = "regulator-fixed";
@@ -117,10 +117,10 @@
                 pinctrl-names = "default";
                 pinctrl-0 = <&hp_det>;
         };
-	
+
 	//spdif 声卡
         spdif-sound {
-                status = "okay";
+                status = "disabled";
                 compatible = "simple-audio-card";
                 simple-audio-card,name = "ROCKCHIP,SPDIF";
                 simple-audio-card,mclk-fs = <128>;
@@ -133,7 +133,7 @@
         };
 
         spdif_out: spdif-out {
-                        status = "okay";
+                        status = "disabled";
                         compatible = "linux,spdif-dit";
                         #sound-dai-cells = <0>;
         };
@@ -145,7 +145,7 @@
                 rockchip,cpu = <&i2s1_8ch>;
                 rockchip,codec = <&rk809_codec>, <&vad>;
         };
-	
+
 	//LCD屏幕供电0
         vcc3v3_lcd0_n: vcc3v3-lcd0-n {
                 compatible = "regulator-fixed";
@@ -621,7 +621,7 @@
 };
 
 &spdif_8ch {
-        status = "okay";
+        status = "disabled";
         pinctrl-names = "default";
         pinctrl-0 = <&spdifm1_tx>;
 };
