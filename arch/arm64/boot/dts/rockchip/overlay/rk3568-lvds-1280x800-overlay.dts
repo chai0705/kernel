@@ -1,0 +1,119 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/display/drm_mipi_dsi.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/display/media-bus-format.h>
+/ {
+
+	fragment@0 {
+		target = <&lvds_panel>;
+		__overlay__ {
+			status = "okay";
+			bus-format = <MEDIA_BUS_FMT_RGB888_1X7X4_SPWG>;
+			display-timings {
+				native-mode = <&lvds_timing0>;
+				lvds_timing0: lvds-timing0 {
+					clock-frequency = <82421000>;
+					hactive = <1280>;
+					vactive = <800>;
+					hback-porch = <88>;
+					hfront-porch = <132>;
+					vback-porch = <23>;
+					vfront-porch = <49>;
+					hsync-len = <40>;
+					vsync-len = <20>;
+					hsync-active = <0>;
+					vsync-active = <0>;
+					de-active = <0>;
+					pixelclk-active = <0>;
+				};
+			};
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				port@0 {
+					reg = <0>;
+					dual-lvds-even-pixels;
+					panel_in_lvds: endpoint {
+						remote-endpoint = <&lvds_out_panel>;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&lvds>;
+		__overlay__ {
+			status = "disabled";
+			ports {
+				port@1 {
+					reg = <1>;
+					lvds_out_panel: endpoint {
+						remote-endpoint = <&panel_in_lvds>;
+					};
+				};
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&pwm4>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target = <&backlight>;
+		__overlay__ {
+			status = "okay";
+			pwms = <&pwm4 0 25000 0>;
+		};
+	};
+
+	fragment@4 {
+		target = <&lvds>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@5 {
+		target = <&lvds_in_vp1>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@6 {
+		target = <&lvds_in_vp2>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@7 {
+		target = <&video_phy0>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@8 {
+		target = <&route_lvds>;
+		__overlay__ {
+			status = "okay";
+			connect = <&vp2_out_lvds>;
+		};
+	};
+
+	fragment@9 {
+		target = <&gt9271>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+};
