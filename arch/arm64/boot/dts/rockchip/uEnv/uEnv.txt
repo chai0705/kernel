@@ -6,28 +6,15 @@ enable_uboot_overlays=1
 #overlay_start
 
 # Display 显示输出配置
-# vp0 
-dtoverlay=/dtb/overlay/rk3588-hdmi0-overlay.dtbo
+# vp0
+#dtoverlay=/dtb/overlay/rk3568-hdmi0-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-vga-overlay.dtbo
 
 # vp1
-#dtoverlay=/dtb/overlay/rk3588-dp0-overlay.dtbo
-dtoverlay=/dtb/overlay/rk3588-hdmi1-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-hdmi1-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-mipi-overlay.dtbo
 
 # vp2
-#dtoverlay=/dtb/overlay/rk3588-dsi0-mipi0-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi0-lvds-800x1280-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi0-lvds-1280x800-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi0-lvds-1024x600-overlay.dtbo
-
-# vp3
-#dtoverlay=/dtb/overlay/rk3588-dsi1-mipi1-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-800x1280-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1280x800-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1024x600-overlay.dtbo
-
-# camera
-dtoverlay=/dtb/overlay/rk3588-camera_j1_overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-camera_j2_overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-camera_j3_overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-camera_j4_overlay.dtbo
-
+#dtoverlay=/dtb/overlay/rk3568-lvds-1280x800-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-lvds-800x1280-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-lvds-1024x600-overlay.dtbo

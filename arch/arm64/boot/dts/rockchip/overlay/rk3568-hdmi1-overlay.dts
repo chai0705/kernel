@@ -1,0 +1,48 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+
+	fragment@0 {
+		target = <&hdmi>;
+		__overlay__ {
+			status = "okay";
+			rockchip,phy-table =
+				<92812500  0x8009 0x0000 0x0270>,
+				<165000000 0x800b 0x0000 0x026d>,
+				<185625000 0x800b 0x0000 0x01ed>,
+				<297000000 0x800b 0x0000 0x01ad>,
+				<594000000 0x8029 0x0000 0x0088>,
+				<000000000 0x0000 0x0000 0x0000>;
+		};
+	};
+
+	fragment@1 {
+		target = <&hdmi_in_vp0>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@2 {
+		target = <&hdmi_in_vp1>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target = <&hdmi_sound>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@4 {
+		target = <&route_hdmi>;
+		__overlay__ {
+			status = "okay";
+			connect = <&vp1_out_hdmi>;
+		};
+	};
+};
