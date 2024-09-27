@@ -8,31 +8,6 @@
 
 / {
     fragment@0 {
-        target = <&route_dsi0>;
-
-        __overlay__ {
-            status = "okay";
-            connect = <&vp2_out_dsi0>;
-        };
-    };
-
-    fragment@1 {
-        target = <&mipi_dcphy0>;
-
-        __overlay__ {
-            status = "okay";
-        };
-    };
-
-    fragment@2 {
-        target = <&dsi0_in_vp2>;
-
-        __overlay__ {
-            status = "okay";
-        };
-    };
-
-    fragment@3 {
         target = <&dsi0>;
 
         __overlay__ {
@@ -141,20 +116,20 @@
         };
     };
 
-    fragment@4 {
-        target = <&i2c2>;
+    fragment@1 {
+        target = <&i2c4>;
 
         __overlay__ {
             status = "okay";
-            pinctrl-0 = <&i2c2m4_xfer>;
+            pinctrl-0 = <&i2c4m3_xfer>;
 
             gt9xx@14 {
                 compatible = "goodix,gt9xx";
                 reg = <0x14>;
                 interrupt-parent = <&gpio3>;
-                interrupts = <RK_PC0 IRQ_TYPE_LEVEL_LOW>;
-                reset-gpio = <&gpio3 RK_PC1 GPIO_ACTIVE_LOW>;
-                touch-gpio = <&gpio3 RK_PC0 IRQ_TYPE_EDGE_RISING>;
+                interrupts = <RK_PD2 IRQ_TYPE_LEVEL_LOW>;
+                reset-gpio = <&gpio3 RK_PD3 GPIO_ACTIVE_LOW>;
+                touch-gpio = <&gpio3 RK_PD2 IRQ_TYPE_EDGE_RISING>;
                 status = "okay";
                 tp-size = <911>;
                 max-x = <1024>;

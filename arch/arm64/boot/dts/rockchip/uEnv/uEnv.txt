@@ -20,9 +20,7 @@ dtoverlay=/dtb/overlay/rk3588-hdmi0-overlay.dtbo
 
 # vp3
 #dtoverlay=/dtb/overlay/rk3588-dsi1-mipi1-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-800x1280-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1280x800-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1024x600-overlay.dtbo
+
 
 # camera
 dtoverlay=/dtb/overlay/rk3588-camera_j1_overlay.dtbo

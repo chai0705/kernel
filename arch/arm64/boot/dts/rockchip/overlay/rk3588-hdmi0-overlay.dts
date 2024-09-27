@@ -7,35 +7,48 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 
 / {
-    fragment@0 {
-        target = <&hdptxphy_hdmi0>;
-        __overlay__ {
-            status = "okay";
-        };
-    };
-    fragment@1 {
-        target = <&hdmi0>;
-        __overlay__ {
-            enable-gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_HIGH>;
-            status = "okay";
-        };
-    };
-    fragment@2 {
-        target = <&hdmi0_in_vp0>;
-        __overlay__ {
-            status = "okay";
-        };
-    };
-    fragment@3 {
-        target = <&hdmi0_sound>;
-        __overlay__ {
-            status = "okay";
-        };
-    };
-    fragment@4 {
-        target = <&route_hdmi0>;
-        __overlay__ {
-            status = "okay";
-        };
-    };
+
+	fragment@0 {
+		target = <&hdmi0>;
+		__overlay__ {
+			enable-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+		target = <&hdmi0_in_vp0>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target = <&hdmi0_sound>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target = <&route_hdmi0>;
+		__overlay__ {
+			status = "okay";
+			connect = <&vp0_out_hdmi0>;
+		};
+	};
+
+	fragment@4 {
+		target = <&hdptxphy_hdmi0>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@5 {
+		target = <&i2s5_8ch>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
 };

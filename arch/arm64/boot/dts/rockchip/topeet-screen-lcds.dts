@@ -575,8 +575,6 @@
 		reset-gpios = <&gpio3 RK_PD3 GPIO_ACTIVE_LOW>;
 		touchscreen-size-x = <800>;
 		touchscreen-size-y = <1280>;
-
-
 	};
 
 #elif defined(LCD_TYPE_LVDS_10_1_1024x600_GT911)
