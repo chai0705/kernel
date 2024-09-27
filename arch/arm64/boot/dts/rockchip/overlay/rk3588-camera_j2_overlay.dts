@@ -15,7 +15,6 @@
 / {
     fragment@0 {
         target = <&csi2_dcphy1>;
-
         __overlay__ {
             status = "okay";
 
@@ -28,6 +27,7 @@
                         remote-endpoint = <&ov5695_out_2>;
                         data-lanes = <1 2>;
                     };
+
                     mipi_in_ucam1_ov13850: endpoint@2 {
                         reg = <2>;
                         remote-endpoint = <&ov13850_out_2>;
@@ -56,7 +56,6 @@
 
     fragment@2 {
         target = <&i2c7>;
-
         __overlay__ {
             status = "okay";
             pinctrl-0 = <&i2c7m0_xfer>;
@@ -70,8 +69,8 @@
                 power-domains = <&power RK3588_PD_VI>;
                 pinctrl-names = "default";
                 pinctrl-0 = <&mipim0_camera2_clk>;
-                reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_LOW>;
-                pwdn-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_LOW>;
+                reset-gpios = <&gpio1 RK_PC0 GPIO_ACTIVE_LOW>;
+                pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
                 rockchip,camera-module-index = <1>;
                 rockchip,camera-module-facing = "front";
                 rockchip,camera-module-name = "default";
@@ -94,12 +93,10 @@
                 power-domains = <&power RK3588_PD_VI>;
                 pinctrl-names = "default";
                 pinctrl-0 = <&mipim0_camera2_clk>;
-                reset-gpios = <&gpio1 RK_PA3 GPIO_ACTIVE_HIGH>;
-                pwdn-gpios = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+                reset-gpios = <&gpio1 RK_PC0 GPIO_ACTIVE_HIGH>;
+                pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
                 rockchip,camera-module-index = <1>;
-                rockchip,camera-module-facing =
-
- "front";
+                rockchip,camera-module-facing = "front";
                 rockchip,camera-module-name = "CMK-CT0116";
                 rockchip,camera-module-lens-name = "Largan-50013A1";
 

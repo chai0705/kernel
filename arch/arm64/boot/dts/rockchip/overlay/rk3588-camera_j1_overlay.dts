@@ -14,8 +14,7 @@
 
 / {
     fragment@0 {
-        target = <&csi2_dphy3>;
-
+        target = <&csi2_dcphy0>;
         __overlay__ {
             status = "okay";
 
@@ -23,14 +22,15 @@
                 port@0 {
                     reg = <0>;
 
-                    mipidphy3_in_ucam0: endpoint@1 {
+                    mipi_in_ucam0: endpoint@1 {
                         reg = <1>;
-                        remote-endpoint = <&ov5695_out_4>;
+                        remote-endpoint = <&ov5695_out_1>;
                         data-lanes = <1 2>;
                     };
-                    mipidphy3_in_ucam0_ov13850: endpoint@2 {
+
+                    mipi_in_ucam0_ov13850: endpoint@2 {
                         reg = <2>;
-                        remote-endpoint = <&ov13850_out_4>;
+                        remote-endpoint = <&ov13850_out_1>;
                         data-lanes = <1 2 3 4>;
                     };
                 };
@@ -38,9 +38,9 @@
                 port@1 {
                     reg = <1>;
 
-                    csidphy3_out: endpoint@0 {
+                    csidcphy0_out: endpoint@0 {
                         reg = <0>;
-                        remote-endpoint = <&mipi4_csi2_input>;
+                        remote-endpoint = <&mipi0_csi2_input>;
                     };
                 };
             };
@@ -48,7 +48,7 @@
     };
 
     fragment@1 {
-        target = <&csi2_dphy1_hw>;
+        target = <&mipi_dcphy0>;
         __overlay__ {
             status = "okay";
         };
@@ -56,54 +56,53 @@
 
     fragment@2 {
         target = <&i2c4>;
-
         __overlay__ {
             status = "okay";
             pinctrl-0 = <&i2c4m1_xfer>;
 
-            ov5695_4: ov5695@36 {
+            ov5695_1: ov5695@36 {
                 status = "okay";
                 compatible = "ovti,ov5695";
                 reg = <0x36>;
-                clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+                clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
                 clock-names = "xvclk";
                 power-domains = <&power RK3588_PD_VI>;
                 pinctrl-names = "default";
-                pinctrl-0 = <&mipim0_camera4_clk>;
+                pinctrl-0 = <&mipim0_camera1_clk>;
                 reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_LOW>;
-                pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+                pwdn-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_LOW>;
                 rockchip,camera-module-index = <0>;
                 rockchip,camera-module-facing = "back";
                 rockchip,camera-module-name = "default";
                 rockchip,camera-module-lens-name = "default";
 
                 port {
-                    ov5695_out_4: endpoint {
-                        remote-endpoint = <&mipidphy3_in_ucam0>;
+                    ov5695_out_1: endpoint {
+                        remote-endpoint = <&mipi_in_ucam0>;
                         data-lanes = <1 2>;
                     };
                 };
             };
 
-            ov13850_4: ov13850@10 {
+            ov13850_1: ov13850@10 {
                 status = "okay";
                 compatible = "otvi,ov13850";
                 reg = <0x10>;
-                clocks = <&cru CLK_MIPI_CAMARAOUT_M4>;
+                clocks = <&cru CLK_MIPI_CAMARAOUT_M1>;
                 clock-names = "xvclk";
                 power-domains = <&power RK3588_PD_VI>;
                 pinctrl-names = "default";
-                pinctrl-0 = <&mipim0_camera4_clk>;
+                pinctrl-0 = <&mipim0_camera1_clk>;
                 reset-gpios = <&gpio1 RK_PD3 GPIO_ACTIVE_HIGH>;
-                pwdn-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
-                rockchip,camera-module-index = <3>;
+                pwdn-gpios = <&gpio1 RK_PA7 GPIO_ACTIVE_HIGH>;
+                rockchip,camera-module-index = <0>;
                 rockchip,camera-module-facing = "back";
                 rockchip,camera-module-name = "CMK-CT0116";
                 rockchip,camera-module-lens-name = "Largan-50013A1";
 
                 port {
-                    ov13850_out_4: endpoint {
-                        remote-endpoint = <&mipidphy3_in_ucam0_ov13850>;
+                    ov13850_out_1: endpoint {
+                        remote-endpoint = <&mipi_in_ucam0_ov13850>;
                         data-lanes = <1 2 3 4>;
                     };
                 };
@@ -112,7 +111,7 @@
     };
 
     fragment@3 {
-        target = <&mipi4_csi2>;
+        target = <&mipi0_csi2>;
         __overlay__ {
             status = "okay";
 
@@ -120,18 +119,18 @@
                 port@0 {
                     reg = <0>;
 
-                    mipi4_csi2_input: endpoint@1 {
+                    mipi0_csi2_input: endpoint@1 {
                         reg = <1>;
-                        remote-endpoint = <&csidphy3_out>;
+                        remote-endpoint = <&csidcphy0_out>;
                     };
                 };
 
                 port@1 {
                     reg = <1>;
 
-                    mipi4_csi2_output: endpoint@0 {
+                    mipi0_csi2_output: endpoint@0 {
                         reg = <0>;
-                        remote-endpoint = <&cif_mipi4_in0>;
+                        remote-endpoint = <&cif_mipi_in0>;
                     };
                 };
             };
@@ -153,25 +152,25 @@
     };
 
     fragment@6 {
-        target = <&rkcif_mipi_lvds4>;
+        target = <&rkcif_mipi_lvds>;
         __overlay__ {
             status = "okay";
 
             port {
-                cif_mipi4_in0: endpoint {
-                    remote-endpoint = <&mipi4_csi2_output>;
+                cif_mipi_in0: endpoint {
+                    remote-endpoint = <&mipi0_csi2_output>;
                 };
             };
         };
     };
 
     fragment@7 {
-        target = <&rkcif_mipi_lvds4_sditf>;
+        target = <&rkcif_mipi_lvds_sditf>;
         __overlay__ {
             status = "okay";
 
             port {
-                mipi_lvds4_sditf: endpoint {
+                mipi_lvds_sditf: endpoint {
                     remote-endpoint = <&isp0_vir0>;
                 };
             };
@@ -200,7 +199,7 @@
             port {
                 isp0_vir0: endpoint@0 {
                     reg = <0>;
-                    remote-endpoint = <&mipi_lvds4_sditf>;
+                    remote-endpoint = <&mipi_lvds_sditf>;
                 };
             };
         };
