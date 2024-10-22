@@ -7,12 +7,12 @@ enable_uboot_overlays=1
 
 # Display 显示输出配置
 # vp0
-#dtoverlay=/dtb/overlay/rk3568-hdmi0-overlay.dtbo
+dtoverlay=/dtb/overlay/rk3568-hdmi0-overlay.dtbo
 #dtoverlay=/dtb/overlay/rk3568-vga-overlay.dtbo
 
 # vp1
 #dtoverlay=/dtb/overlay/rk3568-hdmi1-overlay.dtbo
-dtoverlay=/dtb/overlay/rk3568-mipi-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3568-mipi-overlay.dtbo
 
 # vp2
 #dtoverlay=/dtb/overlay/rk3568-lvds-1280x800-overlay.dtbo
