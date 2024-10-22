@@ -11,7 +11,6 @@ dtoverlay=/dtb/overlay/rk3588-hdmi0-overlay.dtbo
 
 # vp1
 #dtoverlay=/dtb/overlay/rk3588-dp0-overlay.dtbo
-#dtoverlay=/dtb/overlay/rk3588-hdmi1-overlay.dtbo
 
 # vp2
 dtoverlay=/dtb/overlay/rk3588-dsi0-mipi0-overlay.dtbo
@@ -20,7 +19,7 @@ dtoverlay=/dtb/overlay/rk3588-dsi0-mipi0-overlay.dtbo
 #dtoverlay=/dtb/overlay/rk3588-dsi0-lvds-1024x600-overlay.dtbo
 
 # vp3
-dtoverlay=/dtb/overlay/rk3588-dsi1-mipi1-overlay.dtbo
+#dtoverlay=/dtb/overlay/rk3588-dsi1-mipi1-overlay.dtbo
 #dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-800x1280-overlay.dtbo
 #dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1280x800-overlay.dtbo
 #dtoverlay=/dtb/overlay/rk3588-dsi1-lvds-1024x600-overlay.dtbo
