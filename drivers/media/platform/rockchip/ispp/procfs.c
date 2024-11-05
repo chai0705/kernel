@@ -114,7 +114,7 @@ static int ispp_show(struct seq_file *p, void *v)
 
 static int ispp_open(struct inode *inode, struct file *file)
 {
-	struct rkispp_device *data = PDE_DATA(inode);
+	struct rkispp_device *data = pde_data(inode);
 
 	return single_open(file, ispp_show, data);
 }

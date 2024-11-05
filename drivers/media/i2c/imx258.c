@@ -684,7 +684,7 @@ static const struct imx258_mode supported_modes[] = {
 		.spd = &imx258_full_spd,
 		.ebd = &imx258_full_ebd,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
@@ -701,7 +701,7 @@ static const struct imx258_mode supported_modes[] = {
 		.spd = NULL,
 		.ebd = NULL,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -823,7 +823,7 @@ static const struct imx258_mode *
 }
 
 static int imx258_set_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct imx258 *imx258 = to_imx258(sd);
@@ -839,7 +839,7 @@ static int imx258_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&imx258->mutex);
 		return -ENOTTY;
@@ -871,7 +871,7 @@ static int imx258_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx258_get_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct imx258 *imx258 = to_imx258(sd);
@@ -880,7 +880,7 @@ static int imx258_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&imx258->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&imx258->mutex);
 		return -ENOTTY;
@@ -896,13 +896,13 @@ static int imx258_get_fmt(struct v4l2_subdev *sd,
 			fmt->format.height = mode->spd->height;
 			fmt->format.code = mode->spd->bus_fmt;
 			//Set the vc channel to be consistent with the valid data
-			fmt->reserved[0] = V4L2_MBUS_CSI2_CHANNEL_0;
+			fmt->reserved[0] = 0;
 		} else if (fmt->pad == imx258->ebd_id && mode->ebd) {
 			fmt->format.width = mode->ebd->width;
 			fmt->format.height = mode->ebd->height;
 			fmt->format.code = mode->ebd->bus_fmt;
 			//Set the vc channel to be consistent with the valid data
-			fmt->reserved[0] = V4L2_MBUS_CSI2_CHANNEL_0;
+			fmt->reserved[0] = 0;
 		}
 	}
 	mutex_unlock(&imx258->mutex);
@@ -911,7 +911,7 @@ static int imx258_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx258_enum_mbus_code(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -922,7 +922,7 @@ static int imx258_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx258_enum_frame_sizes(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1557,7 +1557,7 @@ static int imx258_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx258 *imx258 = to_imx258(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct imx258_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&imx258->mutex);
@@ -1575,7 +1575,7 @@ static int imx258_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int imx258_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1592,13 +1592,9 @@ static int imx258_enum_frame_interval(struct v4l2_subdev *sd,
 static int imx258_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	u32 val = 0;
 
-	val = 1 << (IMX258_LANES - 1) |
-	      V4L2_MBUS_CSI2_CHANNEL_0 |
-	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = IMX258_LANES;
 
 	return 0;
 }
@@ -1976,7 +1972,7 @@ continue_probe:
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 imx258->module_index, facing,
 		 IMX258_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2002,7 +1998,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int imx258_remove(struct i2c_client *client)
+static void imx258_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx258 *imx258 = to_imx258(sd);
@@ -2018,8 +2014,6 @@ static int imx258_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__imx258_power_off(imx258);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

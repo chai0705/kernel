@@ -105,6 +105,9 @@ static int micro_key_probe(struct platform_device *pdev)
 	keys->codes = devm_kmemdup(&pdev->dev, micro_keycodes,
 			   keys->input->keycodesize * keys->input->keycodemax,
 			   GFP_KERNEL);
+	if (!keys->codes)
+		return -ENOMEM;
+
 	keys->input->keycode = keys->codes;
 
 	__set_bit(EV_KEY, keys->input->evbit);
@@ -140,7 +143,7 @@ static int __maybe_unused micro_key_resume(struct device *dev)
 
 	mutex_lock(&input->mutex);
 
-	if (input->users)
+	if (input_device_enabled(input))
 		micro_key_start(keys);
 
 	mutex_unlock(&input->mutex);

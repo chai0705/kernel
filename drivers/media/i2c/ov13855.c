@@ -31,6 +31,7 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
+#include "otp_eeprom.h"
 
 #define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x04)
 
@@ -145,6 +146,8 @@ struct ov13855 {
 	const char		*module_facing;
 	const char		*module_name;
 	const char		*len_name;
+
+	struct otp_info		*otp;
 };
 
 #define to_ov13855(sd) container_of(sd, struct ov13855, subdev)
@@ -1088,7 +1091,7 @@ ov13855_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int ov13855_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov13855 *ov13855 = to_ov13855(sd);
@@ -1106,7 +1109,7 @@ static int ov13855_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov13855->mutex);
 		return -ENOTTY;
@@ -1137,7 +1140,7 @@ static int ov13855_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov13855_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov13855 *ov13855 = to_ov13855(sd);
@@ -1146,7 +1149,7 @@ static int ov13855_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov13855->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov13855->mutex);
 		return -ENOTTY;
@@ -1163,7 +1166,7 @@ static int ov13855_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov13855_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -1174,7 +1177,7 @@ static int ov13855_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov13855_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1217,14 +1220,97 @@ static int ov13855_g_frame_interval(struct v4l2_subdev *sd,
 	return 0;
 }
 
+static void ov13855_get_otp(struct otp_info *otp,
+			    struct rkmodule_inf *inf)
+{
+	u32 i, j;
+	u32 w, h;
+
+	/* awb */
+	if (otp->awb_data.flag) {
+		inf->awb.flag = 1;
+		inf->awb.r_value = otp->awb_data.r_ratio;
+		inf->awb.b_value = otp->awb_data.b_ratio;
+		inf->awb.gr_value = otp->awb_data.g_ratio;
+		inf->awb.gb_value = 0x0;
+
+		inf->awb.golden_r_value = otp->awb_data.r_golden;
+		inf->awb.golden_b_value = otp->awb_data.b_golden;
+		inf->awb.golden_gr_value = otp->awb_data.g_golden;
+		inf->awb.golden_gb_value = 0x0;
+	}
+
+	/* lsc */
+	if (otp->lsc_data.flag) {
+		inf->lsc.flag = 1;
+		inf->lsc.width = otp->basic_data.size.width;
+		inf->lsc.height = otp->basic_data.size.height;
+		inf->lsc.table_size = otp->lsc_data.table_size;
+
+		for (i = 0; i < 289; i++) {
+			inf->lsc.lsc_r[i] = (otp->lsc_data.data[i * 2] << 8) |
+					     otp->lsc_data.data[i * 2 + 1];
+			inf->lsc.lsc_gr[i] = (otp->lsc_data.data[i * 2 + 578] << 8) |
+					      otp->lsc_data.data[i * 2 + 579];
+			inf->lsc.lsc_gb[i] = (otp->lsc_data.data[i * 2 + 1156] << 8) |
+					      otp->lsc_data.data[i * 2 + 1157];
+			inf->lsc.lsc_b[i] = (otp->lsc_data.data[i * 2 + 1734] << 8) |
+					     otp->lsc_data.data[i * 2 + 1735];
+		}
+	}
+
+	/* pdaf */
+	if (otp->pdaf_data.flag) {
+		inf->pdaf.flag = 1;
+		inf->pdaf.gainmap_width = otp->pdaf_data.gainmap_width;
+		inf->pdaf.gainmap_height = otp->pdaf_data.gainmap_height;
+		inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
+		inf->pdaf.dcc_mode = otp->pdaf_data.dcc_mode;
+		inf->pdaf.dcc_dir = otp->pdaf_data.dcc_dir;
+		inf->pdaf.dccmap_width = otp->pdaf_data.dccmap_width;
+		inf->pdaf.dccmap_height = otp->pdaf_data.dccmap_height;
+		w = otp->pdaf_data.gainmap_width;
+		h = otp->pdaf_data.gainmap_height;
+		for (i = 0; i < h; i++) {
+			for (j = 0; j < w; j++) {
+				inf->pdaf.gainmap[i * w + j] =
+					(otp->pdaf_data.gainmap[(i * w + j) * 2] << 8) |
+					otp->pdaf_data.gainmap[(i * w + j) * 2 + 1];
+			}
+		}
+		w = otp->pdaf_data.dccmap_width;
+		h = otp->pdaf_data.dccmap_height;
+		for (i = 0; i < h; i++) {
+			for (j = 0; j < w; j++) {
+				inf->pdaf.dccmap[i * w + j] =
+					(otp->pdaf_data.dccmap[(i * w + j) * 2] << 8) |
+					otp->pdaf_data.dccmap[(i * w + j) * 2 + 1];
+			}
+		}
+	}
+
+	/* af */
+	if (otp->af_data.flag) {
+		inf->af.flag = 1;
+		inf->af.dir_cnt = 1;
+		inf->af.af_otp[0].vcm_start = otp->af_data.af_inf;
+		inf->af.af_otp[0].vcm_end = otp->af_data.af_macro;
+		inf->af.af_otp[0].vcm_dir = 0;
+	}
+}
+
 static void ov13855_get_module_inf(struct ov13855 *ov13855,
 				   struct rkmodule_inf *inf)
 {
+	struct otp_info *otp = ov13855->otp;
+
 	memset(inf, 0, sizeof(*inf));
 	strscpy(inf->base.sensor, OV13855_NAME, sizeof(inf->base.sensor));
 	strscpy(inf->base.module, ov13855->module_name,
 		sizeof(inf->base.module));
 	strscpy(inf->base.lens, ov13855->len_name, sizeof(inf->base.lens));
+	if (otp)
+		ov13855_get_otp(otp, inf);
 }
 
 static long ov13855_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
@@ -1535,7 +1621,7 @@ static int ov13855_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov13855 *ov13855 = to_ov13855(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov13855_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ov13855->mutex);
@@ -1553,7 +1639,7 @@ static int ov13855_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int ov13855_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1570,23 +1656,15 @@ static int ov13855_enum_frame_interval(struct v4l2_subdev *sd,
 static int ov13855_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 				struct v4l2_mbus_config *config)
 {
-	if (2 == OV13855_LANES) {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_2_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	} else if (4 == OV13855_LANES) {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_4_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	}
+
+	config->type = V4L2_MBUS_CSI2_DPHY;
+	config->bus.mipi_csi2.num_data_lanes = OV13855_LANES;
 
 	return 0;
 }
 
 static int ov13855_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct ov13855 *ov13855 = to_ov13855(sd);
@@ -1827,6 +1905,10 @@ static int ov13855_probe(struct i2c_client *client,
 {
 	struct device *dev = &client->dev;
 	struct device_node *node = dev->of_node;
+	struct i2c_client *eeprom_ctrl_client;
+	struct device_node *eeprom_ctrl_node;
+	struct v4l2_subdev *eeprom_ctrl;
+	struct otp_info *otp_ptr;
 	struct ov13855 *ov13855;
 	struct v4l2_subdev *sd;
 	char facing[2];
@@ -1912,6 +1994,37 @@ static int ov13855_probe(struct i2c_client *client,
 	if (ret)
 		goto err_power_off;
 
+	eeprom_ctrl_node = of_parse_phandle(node, "eeprom-ctrl", 0);
+	if (eeprom_ctrl_node) {
+		eeprom_ctrl_client =
+			of_find_i2c_device_by_node(eeprom_ctrl_node);
+		of_node_put(eeprom_ctrl_node);
+		if (IS_ERR_OR_NULL(eeprom_ctrl_client)) {
+			dev_err(dev, "can not get node\n");
+			goto continue_probe;
+		}
+		eeprom_ctrl = i2c_get_clientdata(eeprom_ctrl_client);
+		if (IS_ERR_OR_NULL(eeprom_ctrl)) {
+			dev_err(dev, "can not get eeprom i2c client\n");
+		} else {
+			otp_ptr = devm_kzalloc(dev, sizeof(*otp_ptr), GFP_KERNEL);
+			if (!otp_ptr) {
+				put_device(&eeprom_ctrl_client->dev);
+				goto continue_probe;
+			}
+			ret = v4l2_subdev_call(eeprom_ctrl,
+				core, ioctl, 0, otp_ptr);
+			if (!ret) {
+				ov13855->otp = otp_ptr;
+			} else {
+				ov13855->otp = NULL;
+				devm_kfree(dev, otp_ptr);
+			}
+		}
+		put_device(&eeprom_ctrl_client->dev);
+	}
+
+continue_probe:
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 	sd->internal_ops = &ov13855_internal_ops;
 	sd->flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
@@ -1933,7 +2046,7 @@ static int ov13855_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ov13855->module_index, facing,
 		 OV13855_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1959,7 +2072,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov13855_remove(struct i2c_client *client)
+static void ov13855_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13855 *ov13855 = to_ov13855(sd);
@@ -1975,8 +2088,6 @@ static int ov13855_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov13855_power_off(ov13855);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

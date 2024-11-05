@@ -420,7 +420,7 @@ static const struct sc500ai_mode supported_modes[] = {
 		.mipi_freq_idx = 0,
 		.bpp = 10,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 2880,
@@ -437,10 +437,10 @@ static const struct sc500ai_mode supported_modes[] = {
 		.mipi_freq_idx = 1,
 		.bpp = 10,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -554,7 +554,7 @@ sc500ai_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int sc500ai_set_fmt(struct v4l2_subdev *sd,
-                           struct v4l2_subdev_pad_config *cfg,
+                           struct v4l2_subdev_state *sd_state,
                            struct v4l2_subdev_format *fmt)
 {
 	struct sc500ai *sc500ai = to_sc500ai(sd);
@@ -571,7 +571,7 @@ static int sc500ai_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc500ai->mutex);
 		return -ENOTTY;
@@ -600,7 +600,7 @@ static int sc500ai_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc500ai_get_fmt(struct v4l2_subdev *sd,
-                           struct v4l2_subdev_pad_config *cfg,
+                           struct v4l2_subdev_state *sd_state,
                            struct v4l2_subdev_format *fmt)
 {
 	struct sc500ai *sc500ai = to_sc500ai(sd);
@@ -609,7 +609,7 @@ static int sc500ai_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc500ai->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc500ai->mutex);
 		return -ENOTTY;
@@ -631,7 +631,7 @@ static int sc500ai_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc500ai_enum_mbus_code(struct v4l2_subdev *sd,
-                                  struct v4l2_subdev_pad_config *cfg,
+                                  struct v4l2_subdev_state *sd_state,
                                   struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc500ai *sc500ai = to_sc500ai(sd);
@@ -644,7 +644,7 @@ static int sc500ai_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc500ai_enum_frame_sizes(struct v4l2_subdev *sd,
-                                    struct v4l2_subdev_pad_config *cfg,
+                                    struct v4l2_subdev_state *sd_state,
                                     struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -678,19 +678,8 @@ static int sc500ai_g_frame_interval(struct v4l2_subdev *sd,
 static int sc500ai_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
                                  struct v4l2_mbus_config *config)
 {
-	struct sc500ai *sc500ai = to_sc500ai(sd);
-	const struct sc500ai_mode *mode = sc500ai->cur_mode;
-	u32 val = 1 << (SC500AI_LANES - 1) |
-	          V4L2_MBUS_CSI2_CHANNEL_0 |
-	          V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = SC500AI_LANES;
 
 	return 0;
 }
@@ -1294,7 +1283,7 @@ static int sc500ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc500ai *sc500ai = to_sc500ai(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-	        v4l2_subdev_get_try_format(sd, fh->pad, 0);
+	        v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc500ai_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc500ai->mutex);
@@ -1324,7 +1313,7 @@ static int sc500ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
  * to the alignment rules.
  */
 static int sc500ai_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	if (sel->target == V4L2_SEL_TGT_CROP_BOUNDS) {
@@ -1338,7 +1327,7 @@ static int sc500ai_get_selection(struct v4l2_subdev *sd,
 }
 
 static int sc500ai_enum_frame_interval(struct v4l2_subdev *sd,
-                                       struct v4l2_subdev_pad_config *cfg,
+                                       struct v4l2_subdev_state *sd_state,
                                        struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1790,7 +1779,7 @@ static int sc500ai_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 	         sc500ai->module_index, facing,
 	         SC500AI_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1816,7 +1805,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc500ai_remove(struct i2c_client *client)
+static void sc500ai_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc500ai *sc500ai = to_sc500ai(sd);
@@ -1832,8 +1821,6 @@ static int sc500ai_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc500ai_power_off(sc500ai);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

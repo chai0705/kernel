@@ -1158,7 +1158,7 @@ static const struct gc8034_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 1,
 		.global_reg_list = gc8034_global_regs_2lane,
 		.reg_list = gc8034_3264x2448_regs_2lane,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 #else
 	{
@@ -1174,7 +1174,7 @@ static const struct gc8034_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 0,
 		.global_reg_list = gc8034_global_regs_2lane,
 		.reg_list = gc8034_3264x2448_regs_2lane,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 1632,
@@ -1189,7 +1189,7 @@ static const struct gc8034_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 0,
 		.global_reg_list = gc8034_global_regs_2lane,
 		.reg_list = gc8034_1632x1224_regs_2lane,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 #endif
 };
@@ -1208,7 +1208,7 @@ static const struct gc8034_mode supported_modes_4lane[] = {
 		.mipi_freq_idx = 0,
 		.global_reg_list = gc8034_global_regs_4lane,
 		.reg_list = gc8034_3264x2448_regs_4lane,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -1316,7 +1316,7 @@ gc8034_find_best_fit(struct gc8034 *gc8034,
 }
 
 static int gc8034_set_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct gc8034 *gc8034 = to_gc8034(sd);
@@ -1332,7 +1332,7 @@ static int gc8034_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&gc8034->mutex);
 		return -ENOTTY;
@@ -1356,7 +1356,7 @@ static int gc8034_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc8034_get_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct gc8034 *gc8034 = to_gc8034(sd);
@@ -1365,7 +1365,7 @@ static int gc8034_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&gc8034->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&gc8034->mutex);
 		return -ENOTTY;
@@ -1382,7 +1382,7 @@ static int gc8034_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc8034_enum_mbus_code(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -1393,7 +1393,7 @@ static int gc8034_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int gc8034_enum_frame_sizes(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct gc8034 *gc8034 = to_gc8034(sd);
@@ -1468,7 +1468,7 @@ static void gc8034_get_otp(struct otp_info *otp,
 		inf->pdaf.flag = 1;
 		inf->pdaf.gainmap_width = otp->pdaf_data.gainmap_width;
 		inf->pdaf.gainmap_height = otp->pdaf_data.gainmap_height;
-		//inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
+		inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
 		inf->pdaf.dcc_mode = otp->pdaf_data.dcc_mode;
 		inf->pdaf.dcc_dir = otp->pdaf_data.dcc_dir;
 		inf->pdaf.dccmap_width = otp->pdaf_data.dccmap_width;
@@ -2637,7 +2637,7 @@ static int gc8034_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct gc8034 *gc8034 = to_gc8034(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(sd, fh->pad, 0);
+			v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct gc8034_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&gc8034->mutex);
@@ -2655,7 +2655,7 @@ static int gc8034_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int gc8034_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct gc8034 *gc8034 = to_gc8034(sd);
@@ -2678,16 +2678,9 @@ static int gc8034_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 
 	dev_info(dev, "%s(%d) enter!\n", __func__, __LINE__);
 
-	if (2 == sensor->lane_num) {
+	if (2 == sensor->lane_num || 4 == sensor->lane_num) {
 		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_2_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	} else if (4 == sensor->lane_num) {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_4_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+		config->bus.mipi_csi2.num_data_lanes = sensor->lane_num;
 	} else {
 		dev_err(&sensor->client->dev,
 			"unsupported lane_num(%d)\n", sensor->lane_num);
@@ -3208,7 +3201,7 @@ continue_probe:
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 gc8034->module_index, facing,
 		 GC8034_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -3234,7 +3227,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int gc8034_remove(struct i2c_client *client)
+static void gc8034_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct gc8034 *gc8034 = to_gc8034(sd);
@@ -3250,8 +3243,6 @@ static int gc8034_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__gc8034_power_off(gc8034);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

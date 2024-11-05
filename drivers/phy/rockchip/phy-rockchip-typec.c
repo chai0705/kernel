@@ -422,8 +422,8 @@ enum {
 struct rockchip_typec_phy {
 	struct device *dev;
 	void __iomem *base;
-	struct typec_mux *mux;
-	struct typec_switch *sw;
+	struct typec_mux_dev *mux;
+	struct typec_switch_dev *sw;
 	struct regmap *grf_regs;
 	struct clk *clk_core;
 	struct clk *clk_ref;
@@ -1327,7 +1327,7 @@ static int tcphy_get_mode(struct rockchip_typec_phy *tcphy)
 	return tcphy->new_mode;
 }
 
-static int tcphy_orien_sw_set(struct typec_switch *sw,
+static int tcphy_orien_sw_set(struct typec_switch_dev *sw,
 			      enum typec_orientation orien)
 {
 	struct rockchip_typec_phy *tcphy = typec_switch_get_drvdata(sw);
@@ -1657,7 +1657,7 @@ static const struct phy_ops rockchip_dp_phy_ops = {
 	.owner		= THIS_MODULE,
 };
 
-static int tcphy_typec_mux_set(struct typec_mux *mux, struct typec_mux_state *state)
+static int tcphy_typec_mux_set(struct typec_mux_dev *mux, struct typec_mux_state *state)
 {
 	struct rockchip_typec_phy *tcphy = typec_mux_get_drvdata(mux);
 	struct typec_displayport_data *data;
@@ -1798,15 +1798,14 @@ static int rockchip_typec_phy_probe(struct platform_device *pdev)
 	struct phy_provider *phy_provider;
 	struct resource *res;
 	const struct rockchip_usb3phy_port_cfg *phy_cfgs;
-	const struct of_device_id *match;
 	int index, ret;
 
 	tcphy = devm_kzalloc(dev, sizeof(*tcphy), GFP_KERNEL);
 	if (!tcphy)
 		return -ENOMEM;
 
-	match = of_match_device(dev->driver->of_match_table, dev);
-	if (!match || !match->data) {
+	phy_cfgs = of_device_get_match_data(dev);
+	if (!phy_cfgs) {
 		dev_err(dev, "phy configs are not assigned!\n");
 		return -EINVAL;
 	}
@@ -1816,7 +1815,6 @@ static int rockchip_typec_phy_probe(struct platform_device *pdev)
 	if (IS_ERR(tcphy->base))
 		return PTR_ERR(tcphy->base);
 
-	phy_cfgs = match->data;
 	/* find out a proper config which can be matched with dt. */
 	index = 0;
 	while (phy_cfgs[index].reg) {

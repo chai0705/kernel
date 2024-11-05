@@ -47,7 +47,7 @@
  * Stuff the entire RSB.
  *
  * Google experimented with loop-unrolling and this turned out to be
- * the optimal version — two calls, each with their own speculation
+ * the optimal version - two calls, each with their own speculation
  * trap should their return address end up getting used, in a loop.
  */
 #ifdef CONFIG_X86_64
@@ -119,25 +119,37 @@
 .endm
 
 /*
+ * Equivalent to -mindirect-branch-cs-prefix; emit the 5 byte jmp/call
+ * to the retpoline thunk with a CS prefix when the register requires
+ * a RAX prefix byte to encode. Also see apply_retpolines().
+ */
+.macro __CS_PREFIX reg:req
+	.irp rs,r8,r9,r10,r11,r12,r13,r14,r15
+	.ifc \reg,\rs
+	.byte 0x2e
+	.endif
+	.endr
+.endm
+
+/*
  * JMP_NOSPEC and CALL_NOSPEC macros can be used instead of a simple
  * indirect jmp/call which may be susceptible to the Spectre variant 2
  * attack.
  */
 .macro JMP_NOSPEC reg:req
 #ifdef CONFIG_RETPOLINE
-	ALTERNATIVE_2 __stringify(ANNOTATE_RETPOLINE_SAFE; jmp *%\reg), \
-		      __stringify(jmp __x86_indirect_thunk_\reg), X86_FEATURE_RETPOLINE, \
-		      __stringify(lfence; ANNOTATE_RETPOLINE_SAFE; jmp *%\reg), X86_FEATURE_RETPOLINE_LFENCE
+	__CS_PREFIX \reg
+	jmp	__x86_indirect_thunk_\reg
 #else
 	jmp	*%\reg
+	int3
 #endif
 .endm
 
 .macro CALL_NOSPEC reg:req
 #ifdef CONFIG_RETPOLINE
-	ALTERNATIVE_2 __stringify(ANNOTATE_RETPOLINE_SAFE; call *%\reg), \
-		      __stringify(call __x86_indirect_thunk_\reg), X86_FEATURE_RETPOLINE, \
-		      __stringify(lfence; ANNOTATE_RETPOLINE_SAFE; call *%\reg), X86_FEATURE_RETPOLINE_LFENCE
+	__CS_PREFIX \reg
+	call	__x86_indirect_thunk_\reg
 #else
 	call	*%\reg
 #endif
@@ -190,6 +202,9 @@
 	_ASM_PTR " 999b\n\t"					\
 	".popsection\n\t"
 
+typedef u8 retpoline_thunk_t[RETPOLINE_THUNK_SIZE];
+extern retpoline_thunk_t __x86_indirect_thunk_array[];
+
 #ifdef CONFIG_RETHUNK
 extern void __x86_return_thunk(void);
 #else
@@ -209,14 +224,10 @@ extern void entry_ibpb(void);
 
 #ifdef CONFIG_RETPOLINE
 
-typedef u8 retpoline_thunk_t[RETPOLINE_THUNK_SIZE];
-
 #define GEN(reg) \
 	extern retpoline_thunk_t __x86_indirect_thunk_ ## reg;
 #include <asm/GEN-for-each-reg.h>
 #undef GEN
-
-extern retpoline_thunk_t __x86_indirect_thunk_array[];
 
 #ifdef CONFIG_X86_64
 
@@ -357,6 +368,8 @@ DECLARE_STATIC_KEY_FALSE(switch_mm_always_ibpb);
 
 DECLARE_STATIC_KEY_FALSE(mds_user_clear);
 DECLARE_STATIC_KEY_FALSE(mds_idle_clear);
+
+DECLARE_STATIC_KEY_FALSE(switch_mm_cond_l1d_flush);
 
 DECLARE_STATIC_KEY_FALSE(mmio_stale_data_clear);
 

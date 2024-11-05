@@ -1245,7 +1245,7 @@ error_mutex_destroy:
 	return rc;
 }
 
-static int gsl_ts_remove(struct i2c_client *client)
+static void gsl_ts_remove(struct i2c_client *client)
 {
 	struct gsl_ts *ts = i2c_get_clientdata(client);
 
@@ -1257,7 +1257,6 @@ static int gsl_ts_remove(struct i2c_client *client)
 	cancel_work_sync(&ts->work);
 	destroy_workqueue(ts->wq);
 	cancel_work_sync(&ts->download_fw_work);
-	return 0;
 }
 
 static const struct dev_pm_ops gsl_ts_pm = {

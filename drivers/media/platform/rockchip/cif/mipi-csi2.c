@@ -63,13 +63,13 @@ static struct v4l2_subdev *get_remote_sensor(struct v4l2_subdev *sd)
 	struct media_entity *sensor_me;
 
 	local = &sd->entity.pads[RK_CSI2_PAD_SINK];
-	remote = media_entity_remote_pad(local);
+	remote = media_pad_remote_pad_first(local);
 	if (!remote) {
 		v4l2_warn(sd, "No link between dphy and sensor\n");
 		return NULL;
 	}
 
-	sensor_me = media_entity_remote_pad(local)->entity;
+	sensor_me = media_pad_remote_pad_first(local)->entity;
 	return media_entity_to_v4l2_subdev(sensor_me);
 }
 
@@ -125,25 +125,7 @@ static void csi2_update_sensor_info(struct csi2_dev *csi2)
 		csi2->dsi_input_en = 0;
 	}
 
-	csi2->bus.flags = mbus.flags;
-	switch (csi2->bus.flags & V4L2_MBUS_CSI2_LANES) {
-	case V4L2_MBUS_CSI2_1_LANE:
-		csi2->bus.num_data_lanes = 1;
-		break;
-	case V4L2_MBUS_CSI2_2_LANE:
-		csi2->bus.num_data_lanes = 2;
-		break;
-	case V4L2_MBUS_CSI2_3_LANE:
-		csi2->bus.num_data_lanes = 3;
-		break;
-	case V4L2_MBUS_CSI2_4_LANE:
-		csi2->bus.num_data_lanes = 4;
-		break;
-	default:
-		v4l2_warn(&csi2->sd, "lane num is invalid\n");
-		csi2->bus.num_data_lanes = 4;
-		break;
-	}
+	csi2->bus = mbus.bus.mipi_csi2;
 
 }
 
@@ -164,8 +146,10 @@ static int csi2_enable_clks(struct csi2_hw *csi2_hw)
 {
 	int ret = 0;
 
-	if (!csi2_hw->clks_bulk)
-		return -EINVAL;
+	if (!csi2_hw->clks_bulk) {
+		dev_info(csi2_hw->dev, "clks is NULL, please check it if needs\n");
+		return 0;
+	}
 
 	ret = clk_bulk_prepare_enable(csi2_hw->clks_num, csi2_hw->clks_bulk);
 	if (ret)
@@ -208,6 +192,9 @@ static void csi2_enable(struct csi2_hw *csi2_hw,
 
 	write_csihost_reg(base, CSIHOST_N_LANES, lanes - 1);
 
+	if (csi2->sw_dbg)
+		val |= BIT(6);
+
 	if (host_type == RK_DSI_RXHOST) {
 		val |= SW_DSI_EN(1) | SW_DATATYPE_FS(0x01) |
 		       SW_DATATYPE_FE(0x11) | SW_DATATYPE_LS(0x21) |
@@ -249,7 +236,8 @@ static int csi2_start(struct csi2_dev *csi2)
 		csi2_hw_do_reset(csi2->csi2_hw[csi_idx]);
 		ret = csi2_enable_clks(csi2->csi2_hw[csi_idx]);
 		if (ret) {
-			v4l2_err(&csi2->sd, "%s: enable clks failed\n", __func__);
+			v4l2_err(&csi2->sd, "%s: enable clks failed, index %d\n",
+				 __func__, csi_idx);
 			return ret;
 		}
 		enable_irq(csi2->csi2_hw[csi_idx]->irq1);
@@ -412,7 +400,7 @@ static int csi2_media_init(struct v4l2_subdev *sd)
 
 /* csi2 accepts all fmt/size from sensor */
 static int csi2_get_set_fmt(struct v4l2_subdev *sd,
-			    struct v4l2_subdev_pad_config *cfg,
+			    struct v4l2_subdev_state *sd_state,
 			    struct v4l2_subdev_format *fmt)
 {
 	int ret;
@@ -431,17 +419,17 @@ static int csi2_get_set_fmt(struct v4l2_subdev *sd,
 }
 
 static struct v4l2_rect *mipi_csi2_get_crop(struct csi2_dev *csi2,
-						 struct v4l2_subdev_pad_config *cfg,
+						 struct v4l2_subdev_state *sd_state,
 						 enum v4l2_subdev_format_whence which)
 {
 	if (which == V4L2_SUBDEV_FORMAT_TRY)
-		return v4l2_subdev_get_try_crop(&csi2->sd, cfg, RK_CSI2_PAD_SINK);
+		return v4l2_subdev_get_try_crop(&csi2->sd, sd_state, RK_CSI2_PAD_SINK);
 	else
 		return &csi2->crop;
 }
 
 static int csi2_get_selection(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_selection *sel)
 {
 	struct csi2_dev *csi2 = sd_to_dev(sd);
@@ -464,7 +452,7 @@ static int csi2_get_selection(struct v4l2_subdev *sd,
 		if (sel->which == V4L2_SUBDEV_FORMAT_ACTIVE) {
 			sel->pad = 0;
 			ret = v4l2_subdev_call(sensor, pad, get_selection,
-					       cfg, sel);
+					       sd_state, sel);
 			if (ret) {
 				fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
 				fmt.pad = 0;
@@ -483,12 +471,12 @@ static int csi2_get_selection(struct v4l2_subdev *sd,
 				csi2->crop = sel->r;
 			}
 		} else {
-			sel->r = *v4l2_subdev_get_try_crop(&csi2->sd, cfg, sel->pad);
+			sel->r = *v4l2_subdev_get_try_crop(&csi2->sd, sd_state, sel->pad);
 		}
 		break;
 
 	case V4L2_SEL_TGT_CROP:
-		sel->r = *mipi_csi2_get_crop(csi2, cfg, sel->which);
+		sel->r = *mipi_csi2_get_crop(csi2, sd_state, sel->which);
 		break;
 
 	default:
@@ -501,7 +489,7 @@ err:
 }
 
 static int csi2_set_selection(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_selection *sel)
 {
 	struct csi2_dev *csi2 = sd_to_dev(sd);
@@ -509,7 +497,7 @@ static int csi2_set_selection(struct v4l2_subdev *sd,
 	int ret = 0;
 
 	ret = v4l2_subdev_call(sensor, pad, set_selection,
-			       cfg, sel);
+			       sd_state, sel);
 	if (!ret)
 		csi2->crop = sel->r;
 
@@ -526,8 +514,8 @@ static int csi2_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 	ret = v4l2_subdev_call(sensor_sd, pad, get_mbus_config, 0, mbus);
 	if (ret) {
 		mbus->type = V4L2_MBUS_CSI2_DPHY;
-		mbus->flags = csi2->bus.flags;
-		mbus->flags |= BIT(csi2->bus.num_data_lanes - 1);
+		mbus->bus.mipi_csi2.flags = csi2->bus.flags;
+		mbus->bus.mipi_csi2.flags |= BIT(csi2->bus.num_data_lanes - 1);
 	}
 
 	return 0;
@@ -605,7 +593,10 @@ static long rkcif_csi2_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg
 		if (csi2->match_data->chip_id > CHIP_RV1126_CSI2)
 			ret = v4l2_subdev_call(sensor, core, ioctl,
 					       RKCIF_CMD_SET_CSI_IDX,
-					       arg);
+						   arg);
+		break;
+	case RKCIF_CMD_SET_PPI_DATA_DEBUG:
+		csi2->sw_dbg = *((u32 *)arg);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -621,6 +612,7 @@ static long rkcif_csi2_compat_ioctl32(struct v4l2_subdev *sd,
 {
 	void __user *up = compat_ptr(arg);
 	struct rkcif_csi_info csi_info;
+	int sw_dbg = 0;
 	long ret;
 
 	switch (cmd) {
@@ -629,6 +621,12 @@ static long rkcif_csi2_compat_ioctl32(struct v4l2_subdev *sd,
 			return -EFAULT;
 
 		ret = rkcif_csi2_ioctl(sd, cmd, &csi_info);
+		break;
+	case RKCIF_CMD_SET_PPI_DATA_DEBUG:
+		if (copy_from_user(&sw_dbg, up, sizeof(int)))
+			return -EFAULT;
+
+		ret = rkcif_csi2_ioctl(sd, cmd, &sw_dbg);
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -666,18 +664,6 @@ static const struct v4l2_subdev_ops csi2_subdev_ops = {
 	.video = &csi2_video_ops,
 	.pad = &csi2_pad_ops,
 };
-
-static int csi2_parse_endpoint(struct device *dev,
-			       struct v4l2_fwnode_endpoint *vep,
-			       struct v4l2_async_subdev *asd)
-{
-	if (vep->base.port != 0) {
-		dev_err(dev, "The csi host node needs to parse port 0\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
 
 /* The .bound() notifier callback when a match is found */
 static int
@@ -936,28 +922,72 @@ static irqreturn_t rk_csirx_irq2_handler(int irq, void *ctx)
 	return IRQ_HANDLED;
 }
 
+/* Parse fwnode with port0, if an empty function is used, each node will parse
+ * all ports, causing the device to repeatedly join the link and unable to
+ * complete the link
+ */
+static int csi2_fwnode_parse(struct csi2_dev *csi2)
+{
+	struct device *dev = csi2->dev;
+	struct fwnode_handle *ep = NULL;
+	struct v4l2_async_subdev *s_asd = NULL;
+	struct fwnode_handle *remote_ep = NULL;
+	struct v4l2_fwnode_endpoint vep = {
+		.bus_type = V4L2_MBUS_CSI2_DPHY
+	};
+	int ret = 0;
+
+	fwnode_graph_for_each_endpoint(dev_fwnode(dev), ep) {
+		ret = v4l2_fwnode_endpoint_parse(ep, &vep);
+		if (ret)
+			goto err_parse;
+
+		/* only add fwnode form port 0 to notifier list */
+		if (vep.base.port != 0)
+			continue;
+
+		remote_ep = fwnode_graph_get_remote_port_parent(ep);
+		/* skip device dts status is disabled */
+		if (!fwnode_device_is_available(remote_ep)) {
+			fwnode_handle_put(remote_ep);
+			continue;
+		}
+
+		s_asd = v4l2_async_nf_add_fwnode(&csi2->notifier, remote_ep,
+						 struct
+						 v4l2_async_subdev);
+		fwnode_handle_put(remote_ep);
+		if (IS_ERR(s_asd)) {
+			ret = PTR_ERR(s_asd);
+			goto err_parse;
+		}
+	}
+	return 0;
+
+err_parse:
+	fwnode_handle_put(ep);
+	return ret;
+}
+
 static int csi2_notifier(struct csi2_dev *csi2)
 {
 	struct v4l2_async_notifier *ntf = &csi2->notifier;
 	int ret;
 
-	v4l2_async_notifier_init(ntf);
+	v4l2_async_nf_init(ntf);
 
-	ret = v4l2_async_notifier_parse_fwnode_endpoints_by_port(csi2->dev,
-								 &csi2->notifier,
-								 sizeof(struct v4l2_async_subdev), 0,
-								 csi2_parse_endpoint);
+	ret = csi2_fwnode_parse(csi2);
 	if (ret < 0)
 		return ret;
 
 	csi2->sd.subdev_notifier = &csi2->notifier;
 	csi2->notifier.ops = &csi2_async_ops;
-	ret = v4l2_async_subdev_notifier_register(&csi2->sd, &csi2->notifier);
+	ret = v4l2_async_subdev_nf_register(&csi2->sd, &csi2->notifier);
 	if (ret) {
 		v4l2_err(&csi2->sd,
 			 "failed to register async notifier : %d\n",
 			 ret);
-		v4l2_async_notifier_cleanup(&csi2->notifier);
+		v4l2_async_nf_cleanup(&csi2->notifier);
 		return ret;
 	}
 
@@ -1008,6 +1038,12 @@ static const struct csi2_match_data rk3562_csi2_match_data = {
 	.num_hw = 4,
 };
 
+static const struct csi2_match_data rk3576_csi2_match_data = {
+	.chip_id = CHIP_RK3576_CSI2,
+	.num_pads = CSI2_NUM_PADS_MAX,
+	.num_hw = 5,
+};
+
 static const struct of_device_id csi2_dt_ids[] = {
 	{
 		.compatible = "rockchip,rk1808-mipi-csi2",
@@ -1036,6 +1072,10 @@ static const struct of_device_id csi2_dt_ids[] = {
 	{
 		.compatible = "rockchip,rk3562-mipi-csi2",
 		.data = &rk3562_csi2_match_data,
+	},
+	{
+		.compatible = "rockchip,rk3576-mipi-csi2",
+		.data = &rk3576_csi2_match_data,
 	},
 	{ /* sentinel */ }
 };
@@ -1190,6 +1230,10 @@ static const struct csi2_hw_match_data rk3562_csi2_hw_match_data = {
 	.chip_id = CHIP_RK3562_CSI2,
 };
 
+static const struct csi2_hw_match_data rk3576_csi2_hw_match_data = {
+	.chip_id = CHIP_RK3576_CSI2,
+};
+
 static const struct of_device_id csi2_hw_ids[] = {
 	{
 		.compatible = "rockchip,rk1808-mipi-csi2-hw",
@@ -1217,7 +1261,11 @@ static const struct of_device_id csi2_hw_ids[] = {
 	},
 	{
 		.compatible = "rockchip,rk3562-mipi-csi2-hw",
-		.data = &rk3588_csi2_hw_match_data,
+		.data = &rk3562_csi2_hw_match_data,
+	},
+	{
+		.compatible = "rockchip,rk3576-mipi-csi2-hw",
+		.data = &rk3576_csi2_hw_match_data,
 	},
 	{ /* sentinel */ }
 };

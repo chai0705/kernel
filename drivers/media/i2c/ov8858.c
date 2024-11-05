@@ -2016,7 +2016,7 @@ ov8858_find_best_fit(struct ov8858 *ov8858,
 }
 
 static int ov8858_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov8858 *ov8858 = to_ov8858(sd);
@@ -2032,7 +2032,7 @@ static int ov8858_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov8858->mutex);
 		return -ENOTTY;
@@ -2054,7 +2054,7 @@ static int ov8858_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov8858_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov8858 *ov8858 = to_ov8858(sd);
@@ -2063,7 +2063,7 @@ static int ov8858_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov8858->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov8858->mutex);
 		return -ENOTTY;
@@ -2080,7 +2080,7 @@ static int ov8858_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov8858_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -2091,7 +2091,7 @@ static int ov8858_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov8858_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct ov8858 *ov8858 = to_ov8858(sd);
@@ -2826,7 +2826,7 @@ static int ov8858_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov8858 *ov8858 = to_ov8858(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov8858_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ov8858->mutex);
@@ -2844,7 +2844,7 @@ static int ov8858_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int ov8858_enum_frame_interval(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *sd_state,
 				      struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct ov8858 *ov8858 = to_ov8858(sd);
@@ -2867,16 +2867,9 @@ static int ov8858_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 
 	dev_info(dev, "%s(%d) enter!\n", __func__, __LINE__);
 
-	if (2 == sensor->lane_num) {
+	if (2 == sensor->lane_num || 4 == sensor->lane_num) {
 		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_2_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	} else if (4 == sensor->lane_num) {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_4_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+		config->bus.mipi_csi2.num_data_lanes = sensor->lane_num;
 	} else {
 		dev_err(&sensor->client->dev,
 			"unsupported lane_num(%d)\n", sensor->lane_num);
@@ -3563,7 +3556,7 @@ static int ov8858_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ov8858->module_index, facing,
 		 OV8858_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -3589,7 +3582,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov8858_remove(struct i2c_client *client)
+static void ov8858_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov8858 *ov8858 = to_ov8858(sd);
@@ -3609,8 +3602,6 @@ static int ov8858_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov8858_power_off(ov8858);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

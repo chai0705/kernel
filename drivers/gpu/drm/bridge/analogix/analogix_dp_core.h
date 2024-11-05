@@ -9,9 +9,9 @@
 #ifndef _ANALOGIX_DP_CORE_H
 #define _ANALOGIX_DP_CORE_H
 
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_bridge.h>
-#include <drm/drm_dp_helper.h>
 
 #define DP_TIMEOUT_LOOP_COUNT 100
 #define MAX_CR_LOOP 5
@@ -34,6 +34,12 @@
 #define DPCD_PRE_EMPHASIS_GET(x)		(((x) >> 3) & 0x3)
 #define DPCD_VOLTAGE_SWING_SET(x)		(((x) & 0x3) << 0)
 #define DPCD_VOLTAGE_SWING_GET(x)		(((x) >> 0) & 0x3)
+
+/* Supported link rate in eDP 1.4 */
+#define EDP_LINK_BW_2_16			0x08
+#define EDP_LINK_BW_2_43			0x09
+#define EDP_LINK_BW_3_24			0x0c
+#define EDP_LINK_BW_4_32			0x10
 
 struct gpio_desc;
 
@@ -182,6 +188,9 @@ struct analogix_dp_device {
 	struct link_train	link_train;
 	struct phy		*phy;
 	int			dpms_mode;
+	int			nr_link_rate_table;
+	int			link_rate_table[DP_MAX_SUPPORTED_RATES];
+	int			link_rate_select;
 	struct gpio_desc	*hpd_gpiod;
 	bool                    force_hpd;
 	bool			fast_train_enable;
@@ -197,6 +206,8 @@ struct analogix_dp_device {
 	struct analogix_dp_compliance compliance;
 
 	u32 split_area;
+
+	const struct analogix_dp_output_format *output_fmt;
 };
 
 /* analogix_dp_reg.c */

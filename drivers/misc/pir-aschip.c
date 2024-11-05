@@ -49,7 +49,7 @@ static int pir_aschip_sensibility_show(struct seq_file *s, void *v)
 
 static int pir_aschip_sensibility_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, pir_aschip_sensibility_show, PDE_DATA(inode));
+	return single_open(file, pir_aschip_sensibility_show, pde_data(inode));
 }
 
 static ssize_t pir_aschip_sensibility_write(struct file *filp,

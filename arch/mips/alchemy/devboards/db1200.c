@@ -826,7 +826,7 @@ int __init db1200_dev_setup(void)
 	if (!IS_ERR(c)) {
 		pfc = clk_round_rate(c, 50000000);
 		if ((pfc < 1) || (abs(50000000 - pfc) > 2500000))
-			pr_warn("DB1200: cant get I2C close to 50MHz\n");
+			pr_warn("DB1200: can't get I2C close to 50MHz\n");
 		else
 			clk_set_rate(c, pfc);
 		clk_prepare_enable(c);
@@ -847,7 +847,7 @@ int __init db1200_dev_setup(void)
 	i2c_register_board_info(0, db1200_i2c_devs,
 				ARRAY_SIZE(db1200_i2c_devs));
 	spi_register_board_info(db1200_spi_devs,
-				ARRAY_SIZE(db1200_i2c_devs));
+				ARRAY_SIZE(db1200_spi_devs));
 
 	/* SWITCHES:	S6.8 I2C/SPI selector  (OFF=I2C	 ON=SPI)
 	 *		S6.7 AC97/I2S selector (OFF=AC97 ON=I2S)

@@ -912,7 +912,7 @@ err_power_off:
 	return ret;
 }
 
-static int aw36518_remove(struct i2c_client *client)
+static void aw36518_remove(struct i2c_client *client)
 {
 	struct aw36518_flash *flash = i2c_get_clientdata(client);
 	unsigned int i;
@@ -924,7 +924,6 @@ static int aw36518_remove(struct i2c_client *client)
 		media_entity_cleanup(&flash->leds[i].sd.entity);
 	}
 	mutex_destroy(&flash->lock);
-	return 0;
 }
 
 static int __maybe_unused aw36518_runtime_suspend(struct device *dev)

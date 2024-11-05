@@ -281,9 +281,9 @@ static void msdelay(int ms)
 /******************************************************************************/
 
 #if MIR3DA_OFFSET_TEMP_SOLUTION
-static MIR_GENERAL_OPS_DECLARE(ops_handle, i2c_smbus_read, i2c_smbus_read_block, i2c_smbus_write, sensor_sync_write, sensor_sync_read, check_califolder_exist,get_address,support_fast_auto_cali,msdelay, printk, sprintf);
+static MIR_GENERAL_OPS_DECLARE(ops_handle, i2c_smbus_read, i2c_smbus_read_block, i2c_smbus_write, sensor_sync_write, sensor_sync_read, check_califolder_exist,get_address,support_fast_auto_cali,msdelay, _printk, sprintf);
 #else
-static MIR_GENERAL_OPS_DECLARE(ops_handle, i2c_smbus_read, i2c_smbus_read_block, i2c_smbus_write, NULL, NULL, NULL,get_address,NULL,msdelay, printk, sprintf);
+static MIR_GENERAL_OPS_DECLARE(ops_handle, i2c_smbus_read, i2c_smbus_read_block, i2c_smbus_write, NULL, NULL, NULL,get_address,NULL,msdelay, _printk, sprintf);
 #endif
 
 /******************************************************************************/
@@ -867,11 +867,11 @@ static int gsensor_mir3da_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_ops);
 }
 /******************************************************************************/
-static int gsensor_mir3da_remove(struct i2c_client *client)
+static void gsensor_mir3da_remove(struct i2c_client *client)
 {
 	MI_FUN;
 
-	return sensor_unregister_device(client, NULL, &gsensor_ops);
+	sensor_unregister_device(client, NULL, &gsensor_ops);
 }
 /******************************************************************************/
 static const struct i2c_device_id gsensor_mir3da_id[] = {
@@ -881,7 +881,7 @@ static const struct i2c_device_id gsensor_mir3da_id[] = {
 
 static struct i2c_driver gsensor_mir3da_driver = {
 	.probe = gsensor_mir3da_probe,
-	.remove = gsensor_mir3da_remove,
+	.remove = (void *)gsensor_mir3da_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gsensor_mir3da_id,
 	.driver = {

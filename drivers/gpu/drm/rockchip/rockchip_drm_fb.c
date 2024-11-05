@@ -10,8 +10,10 @@
 #include <drm/drm.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_damage_helper.h>
+#include <drm/display/drm_dp_mst_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <soc/rockchip/rockchip_dmc.h>
@@ -142,6 +144,7 @@ rockchip_drm_logo_fb_alloc(struct drm_device *dev, const struct drm_mode_fb_cmd2
 	fb->flags |= ROCKCHIP_DRM_MODE_LOGO_FB;
 	rockchip_logo_fb->logo = logo;
 	rockchip_logo_fb->fb.obj[0] = &rockchip_logo_fb->rk_obj.base;
+	rockchip_logo_fb->fb.obj[0]->funcs = &rockchip_gem_object_funcs;
 	drm_gem_object_init(dev, rockchip_logo_fb->fb.obj[0], PAGE_ALIGN(logo->size));
 	rockchip_logo_fb->rk_obj.dma_addr = logo->dma_addr;
 	rockchip_logo_fb->rk_obj.kvaddr = logo->kvaddr;
@@ -175,8 +178,49 @@ static int rockchip_drm_bandwidth_atomic_check(struct drm_device *dev,
 	return 0;
 }
 
-static void drm_atomic_helper_connector_commit(struct drm_device *dev,
-					       struct drm_atomic_state *old_state)
+static int rockchip_drm_aclk_adjust(struct drm_device *dev,
+				    struct drm_atomic_state *state,
+				    struct dmcfreq_vop_info *vop_bw_info)
+{
+	struct rockchip_drm_private *priv = dev->dev_private;
+	const struct rockchip_crtc_funcs *funcs;
+	struct drm_crtc *crtc;
+	int crtc_num = 0;
+
+	drm_for_each_crtc(crtc, dev) {
+		if (!crtc->state->active)
+			continue;
+		crtc_num++;
+	}
+
+	drm_for_each_crtc(crtc, dev) {
+		if (!crtc->state->active)
+			continue;
+
+		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
+		if (funcs && funcs->set_aclk) {
+			if (vop_bw_info->plane_num_4k || crtc_num > 1 ||
+			    crtc->state->adjusted_mode.crtc_hdisplay > 2560 ||
+			    crtc->state->adjusted_mode.crtc_vdisplay > 2560) {
+				funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE, vop_bw_info);
+				priv->aclk_adjust_frame_num = 2;
+			} else {
+				if (priv->aclk_adjust_frame_num >= 1) {
+					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_ADVANCED_MODE, vop_bw_info);
+					priv->aclk_adjust_frame_num--;
+				} else {
+					funcs->set_aclk(crtc, ROCKCHIP_VOP_ACLK_NORMAL_MODE, vop_bw_info);
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void
+rockchip_drm_atomic_helper_connector_commit(struct drm_device *dev,
+					    struct drm_atomic_state *old_state)
 {
 	struct drm_connector *connector;
 	struct drm_connector_state *new_conn_state;
@@ -189,8 +233,27 @@ static void drm_atomic_helper_connector_commit(struct drm_device *dev,
 		if (!funcs->atomic_commit)
 			continue;
 
-		funcs->atomic_commit(connector, new_conn_state);
+		funcs->atomic_commit(connector, old_state);
 	}
+}
+
+static int rockchip_drm_atomic_helper_get_crc(struct drm_device *dev,
+					      struct drm_atomic_state *state)
+{
+	struct rockchip_drm_private *priv = dev->dev_private;
+	const struct rockchip_crtc_funcs *funcs;
+	struct drm_crtc *crtc;
+
+	drm_for_each_crtc(crtc, dev) {
+		if (!crtc->state->active || !crtc->crc.opened)
+			continue;
+
+		funcs = priv->crtc_funcs[drm_crtc_index(crtc)];
+		if (funcs && funcs->get_crc)
+			funcs->get_crc(crtc);
+	}
+
+	return 0;
 }
 
 /**
@@ -209,11 +272,17 @@ static void rockchip_drm_atomic_helper_commit_tail_rpm(struct drm_atomic_state *
 	struct rockchip_drm_private *prv = dev->dev_private;
 	struct dmcfreq_vop_info vop_bw_info;
 
+#ifdef CONFIG_DRM_DISPLAY_DP_HELPER
+	drm_dp_mst_atomic_wait_for_dependencies(old_state);
+#endif
+
 	drm_atomic_helper_commit_modeset_disables(dev, old_state);
 
 	drm_atomic_helper_commit_modeset_enables(dev, old_state);
 
 	rockchip_drm_bandwidth_atomic_check(dev, old_state, &vop_bw_info);
+
+	rockchip_drm_aclk_adjust(dev, old_state, &vop_bw_info);
 
 	rockchip_dmcfreq_vop_bandwidth_update(&vop_bw_info);
 
@@ -223,17 +292,22 @@ static void rockchip_drm_atomic_helper_commit_tail_rpm(struct drm_atomic_state *
 
 	drm_atomic_helper_fake_vblank(old_state);
 
-	drm_atomic_helper_connector_commit(dev, old_state);
+	rockchip_drm_atomic_helper_connector_commit(dev, old_state);
 
 	drm_atomic_helper_commit_hw_done(old_state);
 
 	drm_atomic_helper_wait_for_vblanks(dev, old_state);
+
+	rockchip_drm_atomic_helper_get_crc(dev, old_state);
 
 	drm_atomic_helper_cleanup_planes(dev, old_state);
 }
 
 static const struct drm_mode_config_helper_funcs rockchip_mode_config_helpers = {
 	.atomic_commit_tail = rockchip_drm_atomic_helper_commit_tail_rpm,
+#ifdef CONFIG_DRM_DISPLAY_DP_HELPER
+	.atomic_commit_setup = drm_dp_mst_atomic_setup_commit,
+#endif
 };
 
 static struct drm_framebuffer *
@@ -292,10 +366,26 @@ static void rockchip_drm_output_poll_changed(struct drm_device *dev)
 		drm_fb_helper_hotplug_event(fb_helper);
 }
 
+static int rockchip_atomic_check(struct drm_device *dev, struct drm_atomic_state *state)
+{
+	int ret;
+
+	ret = drm_atomic_helper_check(dev, state);
+	if (ret)
+		return ret;
+
+#ifdef CONFIG_DRM_DISPLAY_DP_HELPER
+	ret = drm_dp_mst_atomic_check(state);
+	if (ret)
+		return ret;
+#endif
+	return 0;
+}
+
 static const struct drm_mode_config_funcs rockchip_drm_mode_config_funcs = {
 	.fb_create = rockchip_fb_create,
 	.output_poll_changed = rockchip_drm_output_poll_changed,
-	.atomic_check = drm_atomic_helper_check,
+	.atomic_check = rockchip_atomic_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
@@ -329,4 +419,6 @@ void rockchip_drm_mode_config_init(struct drm_device *dev)
 
 	dev->mode_config.funcs = &rockchip_drm_mode_config_funcs;
 	dev->mode_config.helper_private = &rockchip_mode_config_helpers;
+
+	dev->mode_config.normalize_zpos = true;
 }

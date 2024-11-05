@@ -266,9 +266,9 @@ static int gsensor_mpu6880_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_mpu6880_ops);
 }
 
-static int gsensor_mpu6880_remove(struct i2c_client *client)
+static void gsensor_mpu6880_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_mpu6880_ops);
+	sensor_unregister_device(client, NULL, &gsensor_mpu6880_ops);
 }
 
 static const struct i2c_device_id gsensor_mpu6880_id[] = {
@@ -278,7 +278,7 @@ static const struct i2c_device_id gsensor_mpu6880_id[] = {
 
 static struct i2c_driver gsensor_mpu6880_driver = {
 	.probe = gsensor_mpu6880_probe,
-	.remove = gsensor_mpu6880_remove,
+	.remove = (void *)gsensor_mpu6880_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gsensor_mpu6880_id,
 	.driver = {

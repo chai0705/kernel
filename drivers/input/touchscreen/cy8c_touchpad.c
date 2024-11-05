@@ -263,14 +263,12 @@ porbe_err_ret:
 	return rc;
 }
 
-static int cy8ctouch_i2c_remove(struct i2c_client *client)
+static void cy8ctouch_i2c_remove(struct i2c_client *client)
 {
 	struct cy8c_touch *ts = i2c_get_clientdata(client);
 
 	cancel_work_sync(&ts->work);
 	destroy_workqueue(ts->wq);
-
-	return 0;
 }
 
 static const struct i2c_device_id cy8ctouch_id[] = {

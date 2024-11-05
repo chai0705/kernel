@@ -24,7 +24,7 @@
 #include <linux/of_device.h>
 #include <linux/spinlock.h>
 #include <linux/soc/rockchip/rk_vendor_storage.h>
-#include <crypto/sha.h>
+#include <crypto/sha1.h>
 #include <drm/bridge/dw_hdmi.h>
 
 #include "dw-hdmi.h"

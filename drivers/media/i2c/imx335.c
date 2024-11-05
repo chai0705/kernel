@@ -562,10 +562,10 @@ static const struct imx335_mode supported_modes[] = {
 		.reg_list = imx335_hdr2_10bit_2592x1944_regs,
 		.hdr_mode = HDR_X2,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 	{
 		/* 1H period = 3.70us */
@@ -586,10 +586,10 @@ static const struct imx335_mode supported_modes[] = {
 		.reg_list = imx335_hdr3_10bit_2592x1944_regs,
 		.hdr_mode = HDR_X3,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_2,//S->csi wr2
+		.vc[PAD0] = 2,
+		.vc[PAD1] = 1,//M->csi wr0
+		.vc[PAD2] = 0,//L->csi wr0
+		.vc[PAD3] = 2,//S->csi wr2
 	},
 };
 
@@ -711,7 +711,7 @@ static void imx335_change_mode(struct imx335 *imx335, const struct imx335_mode *
 }
 
 static int imx335_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx335 *imx335 = to_imx335(sd);
@@ -726,7 +726,7 @@ static int imx335_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.height = mode->height;
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 
 	} else {
 		imx335_change_mode(imx335, mode);
@@ -745,7 +745,7 @@ static int imx335_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx335_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx335 *imx335 = to_imx335(sd);
@@ -753,7 +753,7 @@ static int imx335_get_fmt(struct v4l2_subdev *sd,
 
 	mutex_lock(&imx335->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 	} else {
 		fmt->format.width = mode->width;
 		fmt->format.height = mode->height;
@@ -770,7 +770,7 @@ static int imx335_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx335_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct imx335 *imx335 = to_imx335(sd);
@@ -783,7 +783,7 @@ static int imx335_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx335_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct imx335 *imx335 = to_imx335(sd);
@@ -816,19 +816,8 @@ static int imx335_g_frame_interval(struct v4l2_subdev *sd,
 static int imx335_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	u32 val = 0;
-	struct imx335 *imx335 = to_imx335(sd);
-	const struct imx335_mode *mode = imx335->cur_mode;
-
-	val = 1 << (IMX335_4LANES - 1) |
-	      V4L2_MBUS_CSI2_CHANNEL_0 |
-	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = IMX335_4LANES;
 
 	return 0;
 }
@@ -1601,7 +1590,7 @@ static int imx335_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx335 *imx335 = to_imx335(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct imx335_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&imx335->mutex);
@@ -1618,7 +1607,7 @@ static int imx335_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 }
 
 static int imx335_enum_frame_interval(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct imx335 *imx335 = to_imx335(sd);
@@ -1647,7 +1636,7 @@ static int imx335_enum_frame_interval(struct v4l2_subdev *sd,
  * to the alignment rules.
  */
 static int imx335_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	/*
@@ -2057,7 +2046,7 @@ static int imx335_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 imx335->module_index, facing,
 		 IMX335_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2083,7 +2072,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int imx335_remove(struct i2c_client *client)
+static void imx335_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx335 *imx335 = to_imx335(sd);
@@ -2099,8 +2088,6 @@ static int imx335_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__imx335_power_off(imx335);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

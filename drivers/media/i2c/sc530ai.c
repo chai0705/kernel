@@ -37,7 +37,6 @@
 #include <media/v4l2-mediabus.h>
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
-#include <stdarg.h>
 #include <linux/linkage.h>
 #include <linux/types.h>
 #include <linux/printk.h>
@@ -81,7 +80,7 @@
 #define SC530AI_REG_ANA_GAIN		0x3e09
 
 #define SC530AI_GAIN_MIN		0x20
-#define SC530AI_GAIN_MAX		(32 * 326)
+#define SC530AI_GAIN_MAX		(9635) //76.48 * 3.938 * 32
 #define SC530AI_GAIN_STEP		1
 #define SC530AI_GAIN_DEFAULT		0x20
 
@@ -692,7 +691,7 @@ static const struct sc530ai_mode supported_modes_4lane[] = {
 		.mipi_freq_idx = 0,
 		.bpp = 10,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 2880,
@@ -709,10 +708,10 @@ static const struct sc530ai_mode supported_modes_4lane[] = {
 		.mipi_freq_idx = 1,
 		.bpp = 10,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -732,7 +731,7 @@ static const struct sc530ai_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 3,
 		.bpp = 10,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -848,7 +847,7 @@ sc530ai_find_best_fit(struct sc530ai *sc530ai, struct v4l2_subdev_format *fmt)
 }
 
 static int sc530ai_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -865,7 +864,7 @@ static int sc530ai_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc530ai->mutex);
 		return -ENOTTY;
@@ -895,7 +894,7 @@ static int sc530ai_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc530ai_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -904,7 +903,7 @@ static int sc530ai_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc530ai->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc530ai->mutex);
 		return -ENOTTY;
@@ -926,7 +925,7 @@ static int sc530ai_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc530ai_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -939,7 +938,7 @@ static int sc530ai_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc530ai_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -976,18 +975,9 @@ static int sc530ai_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *config)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
-	const struct sc530ai_mode *mode = sc530ai->cur_mode;
-	u32 val = 1 << (sc530ai->lane_num - 1) |
-		  V4L2_MBUS_CSI2_CHANNEL_0 |
-		  V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = sc530ai->lane_num;
 
 	return 0;
 }
@@ -1017,39 +1007,40 @@ static void sc530ai_get_gain_reg(u32 total_gain, u32 *again, u32 *dgain,
 		*again = 0x00;
 		*dgain = 0x00;
 		*dgain_fine = gain_factor * 128 / 1000;
-	} else if (gain_factor < 2550) { /* 2x - 2.55x gain */
+	} else if (gain_factor < 2390) { /* 2x - 2.39x gain */
 		*again = 0x01;
 		*dgain = 0x00;
 		*dgain_fine = gain_factor * 128 / 2000;
-	} else if (gain_factor < 2550 * 2) { /* 2.55x - 5.1x gain */
+	} else if (gain_factor < 2390 * 2) { /* 2.39x - 4.78x gain */
 		*again = 0x40;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 2550;
-	} else if (gain_factor < 2550 * 4) { /* 5.1x - 10.2x gain */
+		*dgain_fine = gain_factor * 128 / 2390;
+	} else if (gain_factor < 2390 * 4) { /* 4.78x - 9.56x gain */
 		*again = 0x48;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 5110;
-	} else if (gain_factor < 2550 * 8) { /* 10.2x - 20.4x gain */
+		*dgain_fine = gain_factor * 128 / 2390 / 2;
+	} else if (gain_factor < 2390 * 8) { /* 9.56x - 19.12x gain */
 		*again = 0x49;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 10200;
-	} else if (gain_factor < 2550 * 16) { /* 20.4x - 40.8x gain */
+		*dgain_fine = gain_factor * 128 / 2390 / 4;
+	} else if (gain_factor < 2390 * 16) { /* 19.12x - 38.24x gain */
 		*again = 0x4B;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 20400;
-	} else if (gain_factor < 2550 * 32) { /* 40.8x - 81.6x gain */
+		*dgain_fine = gain_factor * 128 / 2390 / 8;
+	} else if (gain_factor < 2390 * 32) { /* 38.24x - 76.48x gain */
 		*again = 0x4f;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 40800;
-	} else if (gain_factor < 2550 * 64) { /* 81.6x - 163.2x gain */
+		*dgain_fine = gain_factor * 128 / 2390 / 16;
+	} else if (gain_factor < 2390 * 64) { /* 76.48x - 152.96x gain */
 		*again = 0x5f;
 		*dgain = 0x00;
-		*dgain_fine = gain_factor * 128 / 40800 / 2;
-	} else if (gain_factor < 2550 * 128) { /* 163.2x - 326.4x gain */
+		*dgain_fine = gain_factor * 128 / 2390 / 32;
+	} else if (gain_factor < 2390 * 128) { /* 152.96x - 301.1x gain */
 		*again = 0x5f;
 		*dgain = 0x01;
-		*dgain_fine = gain_factor * 128 / 40800 / 4;
+		*dgain_fine = gain_factor * 128 / 2390 / 64;
 	}
+	*dgain_fine = *dgain_fine / 4 * 4;
 }
 
 static int sc530ai_set_hdrae(struct sc530ai *sc530ai,
@@ -1575,7 +1566,7 @@ static int sc530ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(sd, fh->pad, 0);
+			v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc530ai_mode *def_mode = &sc530ai->support_modes[0];
 
 	mutex_lock(&sc530ai->mutex);
@@ -1605,7 +1596,7 @@ static int sc530ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
  * to the alignment rules.
  */
 static int sc530ai_get_selection(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_selection *sel)
 {
 	if (sel->target == V4L2_SEL_TGT_CROP_BOUNDS) {
@@ -1619,7 +1610,7 @@ static int sc530ai_get_selection(struct v4l2_subdev *sd,
 }
 
 static int sc530ai_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -2081,7 +2072,7 @@ static int sc530ai_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		sc530ai->module_index, facing,
 		SC530AI_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(&sc530ai->client->dev,
 			"v4l2 async register subdev failed\n");
@@ -2111,7 +2102,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc530ai_remove(struct i2c_client *client)
+static void sc530ai_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc530ai *sc530ai = to_sc530ai(sd);
@@ -2127,8 +2118,6 @@ static int sc530ai_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc530ai_power_off(sc530ai);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

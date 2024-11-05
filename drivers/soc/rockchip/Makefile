@@ -12,6 +12,7 @@ obj-$(CONFIG_ROCKCHIP_HW_DECOMPRESS_USER) += rockchip_decompress_user.o
 obj-$(CONFIG_ROCKCHIP_IODOMAIN) += io-domain.o
 obj-$(CONFIG_ROCKCHIP_IOMUX) += iomux.o
 obj-$(CONFIG_ROCKCHIP_PM_DOMAINS) += pm_domains.o
+obj-$(CONFIG_ROCKCHIP_DTPM) += dtpm.o
 obj-$(CONFIG_ROCKCHIP_FIQ_DEBUGGER) += fiq_debugger/
 obj-$(CONFIG_ROCKCHIP_VENDOR_STORAGE) += rk_vendor_storage.o
 obj-$(CONFIG_ROCKCHIP_MMC_VENDOR_STORAGE) += sdmmc_vendor_storage.o

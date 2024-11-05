@@ -13,7 +13,6 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-subdev.h>
 #include <media/videobuf2-dma-contig.h>
-#include <linux/dma-iommu.h>
 #include <linux/rk-camera-module.h>
 #include "dev.h"
 #include "regs.h"
@@ -279,13 +278,7 @@ static int bridge_start_stream(struct v4l2_subdev *sd)
 	if (ret < 0)
 		goto stop_bridge;
 
-	ret = media_pipeline_start(&sd->entity, &dev->ispdev->pipe.pipe);
-	if (ret < 0)
-		goto pipe_stream_off;
-
 	return 0;
-pipe_stream_off:
-	dev->ispdev->pipe.set_stream(&dev->ispdev->pipe, false);
 stop_bridge:
 	dev->ops->stop(dev);
 close_pipe:
@@ -308,7 +301,6 @@ static int bridge_stop_stream(struct v4l2_subdev *sd)
 	struct rkisp_bridge_device *dev = v4l2_get_subdevdata(sd);
 
 	dev->ops->stop(dev);
-	media_pipeline_stop(&sd->entity);
 	dev->ispdev->pipe.set_stream(&dev->ispdev->pipe, false);
 	dev->ispdev->pipe.close(&dev->ispdev->pipe);
 	bridge_destroy_buf(dev);
@@ -316,7 +308,7 @@ static int bridge_stop_stream(struct v4l2_subdev *sd)
 }
 
 static int bridge_get_set_fmt(struct v4l2_subdev *sd,
-			      struct v4l2_subdev_pad_config *cfg,
+			      struct v4l2_subdev_state *sd_state,
 			      struct v4l2_subdev_format *fmt)
 {
 	struct rkisp_bridge_device *dev = v4l2_get_subdevdata(sd);
@@ -332,7 +324,7 @@ static int bridge_get_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int bridge_set_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct rkisp_bridge_device *dev = v4l2_get_subdevdata(sd);
@@ -359,7 +351,7 @@ static int bridge_set_selection(struct v4l2_subdev *sd,
 }
 
 static int bridge_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct rkisp_bridge_device *dev = v4l2_get_subdevdata(sd);

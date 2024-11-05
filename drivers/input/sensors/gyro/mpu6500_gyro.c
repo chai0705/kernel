@@ -174,9 +174,9 @@ static int gyro_mpu6500_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gyro_mpu6500_ops);
 }
 
-static int gyro_mpu6500_remove(struct i2c_client *client)
+static void gyro_mpu6500_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gyro_mpu6500_ops);
+	sensor_unregister_device(client, NULL, &gyro_mpu6500_ops);
 }
 
 static const struct i2c_device_id gyro_mpu6500_id[] = {
@@ -186,7 +186,7 @@ static const struct i2c_device_id gyro_mpu6500_id[] = {
 
 static struct i2c_driver gyro_mpu6500_driver = {
 	.probe = gyro_mpu6500_probe,
-	.remove = gyro_mpu6500_remove,
+	.remove = (void *)gyro_mpu6500_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gyro_mpu6500_id,
 	.driver = {

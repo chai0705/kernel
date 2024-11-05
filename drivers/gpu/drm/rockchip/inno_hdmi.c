@@ -38,7 +38,6 @@ struct audio_info {
 
 struct hdmi_data_info {
 	int vic;
-	bool sink_is_hdmi;
 	bool sink_has_audio;
 	unsigned int enc_in_format;
 	unsigned int enc_out_format;
@@ -94,6 +93,11 @@ struct inno_hdmi {
 	struct hdmi_data_info	hdmi_data;
 	struct drm_display_mode previous_mode;
 };
+
+static struct inno_hdmi *connector_to_inno_hdmi(struct drm_connector *connector)
+{
+	return container_of(connector, struct inno_hdmi, connector);
+}
 
 enum {
 	CSC_ITU601_16_235_TO_RGB_0_255_8BIT,
@@ -490,6 +494,8 @@ static int inno_hdmi_config_video_timing(struct inno_hdmi *hdmi,
 static int inno_hdmi_setup(struct inno_hdmi *hdmi,
 			   struct drm_display_mode *mode)
 {
+	struct drm_display_info *display = &hdmi->connector.display_info;
+
 	hdmi->hdmi_data.vic = drm_match_cea_mode(mode);
 
 	hdmi->hdmi_data.enc_in_format = HDMI_COLORSPACE_RGB;
@@ -509,13 +515,13 @@ static int inno_hdmi_setup(struct inno_hdmi *hdmi,
 
 	/* Set HDMI Mode */
 	hdmi_writeb(hdmi, HDMI_HDCP_CTRL,
-		    v_HDMI_DVI(hdmi->hdmi_data.sink_is_hdmi));
+		    v_HDMI_DVI(display->is_hdmi));
 
 	inno_hdmi_config_video_timing(hdmi, mode);
 
 	inno_hdmi_config_video_csc(hdmi);
 
-	if (hdmi->hdmi_data.sink_is_hdmi) {
+	if (display->is_hdmi) {
 		inno_hdmi_config_video_avi(hdmi, mode);
 		inno_hdmi_config_video_vsi(hdmi, mode);
 	}
@@ -594,7 +600,7 @@ static struct drm_encoder_helper_funcs inno_hdmi_encoder_helper_funcs = {
 static enum drm_connector_status
 inno_hdmi_connector_detect(struct drm_connector *connector, bool force)
 {
-	struct inno_hdmi *hdmi = to_inno_hdmi(connector);
+	struct inno_hdmi *hdmi = connector_to_inno_hdmi(connector);
 
 	return (hdmi_readb(hdmi, HDMI_STATUS) & m_HOTPLUG) ?
 		connector_status_connected : connector_status_disconnected;
@@ -602,7 +608,7 @@ inno_hdmi_connector_detect(struct drm_connector *connector, bool force)
 
 static int inno_hdmi_connector_get_modes(struct drm_connector *connector)
 {
-	struct inno_hdmi *hdmi = to_inno_hdmi(connector);
+	struct inno_hdmi *hdmi = connector_to_inno_hdmi(connector);
 	struct edid *edid;
 	int ret = 0;
 
@@ -611,7 +617,6 @@ static int inno_hdmi_connector_get_modes(struct drm_connector *connector)
 
 	edid = drm_get_edid(connector, hdmi->ddc);
 	if (edid) {
-		hdmi->hdmi_data.sink_is_hdmi = drm_detect_hdmi_monitor(edid);
 		hdmi->hdmi_data.sink_has_audio = drm_detect_monitor_audio(edid);
 		drm_connector_update_edid_property(connector, edid);
 		ret = drm_add_edid_modes(connector, edid);
@@ -1110,7 +1115,6 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	struct platform_device *pdev = to_platform_device(dev);
 	struct drm_device *drm = data;
 	struct inno_hdmi *hdmi;
-	struct resource *iores;
 	int irq;
 	int ret;
 
@@ -1122,8 +1126,7 @@ static int inno_hdmi_bind(struct device *dev, struct device *master,
 	hdmi->drm_dev = drm;
 	hdmi->plat_data = device_get_match_data(hdmi->dev);
 
-	iores = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	hdmi->regs = devm_ioremap_resource(dev, iores);
+	hdmi->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(hdmi->regs))
 		return PTR_ERR(hdmi->regs);
 

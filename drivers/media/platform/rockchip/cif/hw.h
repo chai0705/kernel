@@ -74,6 +74,8 @@ struct rkcif_multi_sync_config {
 };
 
 struct rkcif_dummy_buffer {
+	struct vb2_buffer vb;
+	struct vb2_queue vb2_queue;
 	struct list_head list;
 	struct dma_buf *dbuf;
 	dma_addr_t dma_addr;
@@ -105,6 +107,7 @@ enum rkcif_chip_id {
 	CHIP_RK3588_CIF,
 	CHIP_RV1106_CIF,
 	CHIP_RK3562_CIF,
+	CHIP_RK3576_CIF,
 };
 
 struct rkcif_hw_match_data {

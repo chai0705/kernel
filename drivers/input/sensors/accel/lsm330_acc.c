@@ -248,9 +248,9 @@ static int gsensor_lsm330_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_lsm330_ops);
 }
 
-static int gsensor_lsm330_remove(struct i2c_client *client)
+static void gsensor_lsm330_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_lsm330_ops);
+	sensor_unregister_device(client, NULL, &gsensor_lsm330_ops);
 }
 
 static const struct i2c_device_id gsensor_lsm330_id[] = {
@@ -260,7 +260,7 @@ static const struct i2c_device_id gsensor_lsm330_id[] = {
 
 static struct i2c_driver gsensor_lsm330_driver = {
 	.probe = gsensor_lsm330_probe,
-	.remove = gsensor_lsm330_remove,
+	.remove = (void *)gsensor_lsm330_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gsensor_lsm330_id,
 	.driver = {

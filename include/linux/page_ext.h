@@ -19,12 +19,6 @@ struct page_ext_operations {
 enum page_ext_flags {
 	PAGE_EXT_OWNER,
 	PAGE_EXT_OWNER_ALLOCATED,
-#if defined(CONFIG_PAGE_PINNER)
-	/* page refcount was increased by GUP or follow_page(FOLL_GET) */
-	PAGE_EXT_GET,
-	/* page migration failed */
-	PAGE_EXT_PINNER_MIGRATION_FAILED,
-#endif
 #if defined(CONFIG_PAGE_IDLE_FLAG) && !defined(CONFIG_64BIT)
 	PAGE_EXT_YOUNG,
 	PAGE_EXT_IDLE,
@@ -42,8 +36,14 @@ struct page_ext {
 	unsigned long flags;
 };
 
+extern bool early_page_ext;
 extern unsigned long page_ext_size;
 extern void pgdat_page_ext_init(struct pglist_data *pgdat);
+
+static inline bool early_page_ext_enabled(void)
+{
+	return early_page_ext;
+}
 
 #ifdef CONFIG_SPARSEMEM
 static inline void page_ext_init_flatmem(void)
@@ -60,7 +60,7 @@ static inline void page_ext_init(void)
 {
 }
 #endif
-struct page_ext *lookup_page_ext(const struct page *page);
+
 extern struct page_ext *page_ext_get(struct page *page);
 extern void page_ext_put(struct page_ext *page_ext);
 
@@ -73,6 +73,11 @@ static inline struct page_ext *page_ext_next(struct page_ext *curr)
 
 #else /* !CONFIG_PAGE_EXTENSION */
 struct page_ext;
+
+static inline bool early_page_ext_enabled(void)
+{
+	return false;
+}
 
 static inline void pgdat_page_ext_init(struct pglist_data *pgdat)
 {

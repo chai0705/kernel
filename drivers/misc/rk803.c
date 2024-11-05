@@ -319,7 +319,7 @@ error:
 	return ret;
 }
 
-static int rk803_remove(struct i2c_client *client)
+static void rk803_remove(struct i2c_client *client)
 {
 	struct rk803_data *rk803;
 
@@ -327,8 +327,6 @@ static int rk803_remove(struct i2c_client *client)
 	misc_deregister(&rk803->misc);
 
 	rk803_power_off(rk803);
-
-	return 0;
 }
 
 static struct i2c_driver rk803_driver = {

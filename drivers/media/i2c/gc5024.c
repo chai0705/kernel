@@ -441,7 +441,7 @@ gc5024_find_best_fit(struct gc5024 *gc5024,
 }
 
 static int gc5024_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct gc5024 *gc5024 = to_gc5024(sd);
@@ -457,7 +457,7 @@ static int gc5024_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&gc5024->mutex);
 		return -ENOTTY;
@@ -479,7 +479,7 @@ static int gc5024_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc5024_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct gc5024 *gc5024 = to_gc5024(sd);
@@ -488,7 +488,7 @@ static int gc5024_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&gc5024->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&gc5024->mutex);
 		return -ENOTTY;
@@ -505,7 +505,7 @@ static int gc5024_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc5024_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -516,7 +516,7 @@ static int gc5024_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int gc5024_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct gc5024 *gc5024 = to_gc5024(sd);
@@ -853,7 +853,7 @@ static int gc5024_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct gc5024 *gc5024 = to_gc5024(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct gc5024_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&gc5024->mutex);
@@ -870,7 +870,7 @@ static int gc5024_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 }
 #endif
 
-static int sensor_g_mbus_config(struct v4l2_subdev *sd,
+static int sensor_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 				struct v4l2_mbus_config *config)
 {
 	struct gc5024 *sensor = to_gc5024(sd);
@@ -879,10 +879,8 @@ static int sensor_g_mbus_config(struct v4l2_subdev *sd,
 	dev_info(dev, "%s(%d) enter!\n", __func__, __LINE__);
 
 	if (2 == sensor->lane_num) {
-		config->type = V4L2_MBUS_CSI2;
-		config->flags = V4L2_MBUS_CSI2_2_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+		config->type = V4L2_MBUS_CSI2_DPHY;
+		config->bus.mipi_csi2.num_data_lanes = sensor->lane_num;
 	} else {
 		dev_err(&sensor->client->dev,
 				"unsupported lane_num(%d)\n", sensor->lane_num);
@@ -891,7 +889,7 @@ static int sensor_g_mbus_config(struct v4l2_subdev *sd,
 }
 
 static int gc5024_enum_frame_interval(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct gc5024 *gc5024 = to_gc5024(sd);
@@ -926,7 +924,6 @@ static const struct v4l2_subdev_core_ops gc5024_core_ops = {
 };
 
 static const struct v4l2_subdev_video_ops gc5024_video_ops = {
-	.g_mbus_config = sensor_g_mbus_config,
 	.s_stream = gc5024_s_stream,
 	.g_frame_interval = gc5024_g_frame_interval,
 };
@@ -937,6 +934,7 @@ static const struct v4l2_subdev_pad_ops gc5024_pad_ops = {
 	.enum_frame_interval = gc5024_enum_frame_interval,
 	.get_fmt = gc5024_get_fmt,
 	.set_fmt = gc5024_set_fmt,
+	.get_mbus_config = sensor_g_mbus_config,
 };
 
 static const struct v4l2_subdev_ops gc5024_subdev_ops = {
@@ -1363,7 +1361,7 @@ static int gc5024_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 gc5024->module_index, facing,
 		 GC5024_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1389,7 +1387,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int gc5024_remove(struct i2c_client *client)
+static void gc5024_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct gc5024 *gc5024 = to_gc5024(sd);
@@ -1405,8 +1403,6 @@ static int gc5024_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__gc5024_power_off(gc5024);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

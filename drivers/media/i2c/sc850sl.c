@@ -73,7 +73,7 @@
 #define SC850SL_REG_DGAIN		0x3e06
 #define SC850SL_REG_AGAIN		0x3e08
 #define SC850SL_REG_AGAIN_FINE		0x3e09
-//#define SC850SL_REG_DGAIN_FINE		0x3e07
+#define SC850SL_REG_DGAIN_FINE		0x3e07
 
 //short fram gain reg
 #define SC850SL_SF_REG_AGAIN		0x3e12
@@ -370,7 +370,6 @@ static __maybe_unused const struct regval sc850sl_linear10bit_3840x2160_regs[] =
 	{0x59fd, 0x3f},
 	{0x59fe, 0x38},
 	{0x59ff, 0x30},
-	{0x0100, 0x01},
 	/*
 	 * [gain < 2x] {0x363c, 0x05},
 	 * [gain >=2x] {0x363c, 0x07},
@@ -408,7 +407,7 @@ static const struct sc850sl_mode supported_modes[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -542,7 +541,7 @@ static void sc850sl_change_mode(struct sc850sl *sc850sl, const struct sc850sl_mo
 }
 
 static int sc850sl_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -559,7 +558,7 @@ static int sc850sl_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc850sl->mutex);
 		return -ENOTTY;
@@ -587,7 +586,7 @@ static int sc850sl_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc850sl_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -596,7 +595,7 @@ static int sc850sl_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc850sl->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc850sl->mutex);
 		return -ENOTTY;
@@ -617,7 +616,7 @@ static int sc850sl_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc850sl_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -630,7 +629,7 @@ static int sc850sl_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc850sl_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -682,22 +681,9 @@ static int sc850sl_g_frame_interval(struct v4l2_subdev *sd,
 static int sc850sl_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct sc850sl *sc850sl = to_sc850sl(sd);
-	const struct sc850sl_mode *mode = sc850sl->cur_mode;
-	u32 val = 0;
-
-	if (mode->hdr_mode == NO_HDR)
-		val = 1 << (SC850SL_4LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	if (mode->hdr_mode == HDR_X2)
-		val = 1 << (SC850SL_4LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK |
-		V4L2_MBUS_CSI2_CHANNEL_1;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes  = SC850SL_4LANES;
 
 	return 0;
 }
@@ -713,7 +699,7 @@ static void sc850sl_get_module_inf(struct sc850sl *sc850sl,
 }
 
 static void sc850sl_get_gain_reg(u32 val, u32 *again_reg, u32 *again_fine_reg,
-				 u32 *dgain_reg)
+				 u32 *dgain_reg, u32 *dgain_fine_reg)
 {
 	u8 u8Reg0x3e09 = 0x40, u8Reg0x3e08 = 0x03;
 	u32 aCoarseGain = 0;
@@ -757,16 +743,19 @@ static void sc850sl_get_gain_reg(u32 val, u32 *again_reg, u32 *again_fine_reg,
 	u8Reg0x3e09 = aFineGain;
 	//dcg = 2.72  -->  2.72*1024=2785.28
 	u8Reg0x3e08 = (again > 200) ? (u8Reg0x3e08 | 0x20) : (u8Reg0x3e08 & 0x1f);
-
+	*dgain_fine_reg = val * 128 / again / dgain;
 	//dgain
-	if (dgain <= 1) { /*1x ~ 2x*/
+	if (dgain < 2) {	/*1x ~ 2x*/
 		*dgain_reg = 0x00;
-	} else if (dgain <= 2) { /*2x ~ 4x*/
+	} else if (dgain < 4) { /*2x ~ 4x*/
 		*dgain_reg = 0x01;
-	} else if (dgain <= 4) { /*4x ~ 8x*/
+		*dgain_fine_reg += (dgain - 2) * 64;
+	} else if (dgain < 8) { /*4x ~ 8x*/
 		*dgain_reg = 0x03;
+		*dgain_fine_reg += (dgain - 4) * 32;
 	} else {
 		*dgain_reg = 0x07;
+		*dgain_fine_reg = 0x80;
 	}
 
 	*again_reg = u8Reg0x3e08;
@@ -1223,7 +1212,7 @@ static int sc850sl_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc850sl_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc850sl->mutex);
@@ -1241,7 +1230,7 @@ static int sc850sl_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc850sl_enum_frame_interval(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -1264,7 +1253,7 @@ static int sc850sl_enum_frame_interval(struct v4l2_subdev *sd,
 #define DST_HEIGHT_1080 1080
 
 static int sc850sl_get_selection(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_selection *sel)
 {
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -1347,7 +1336,7 @@ static int sc850sl_set_ctrl(struct v4l2_ctrl *ctrl)
 					     struct sc850sl, ctrl_handler);
 	struct i2c_client *client = sc850sl->client;
 	s64 max;
-	u32 again, again_fine, dgain;
+	u32 again, again_fine, dgain, dgain_fine;
 	int ret = 0;
 	u32 val;
 
@@ -1355,7 +1344,7 @@ static int sc850sl_set_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		/* Update max exposure while meeting expected vblanking */
-		max = sc850sl->cur_mode->height + ctrl->val - 8;
+		max = sc850sl->cur_mode->height + ctrl->val - 4;
 		__v4l2_ctrl_modify_range(sc850sl->exposure,
 					 sc850sl->exposure->minimum, max,
 					 sc850sl->exposure->step,
@@ -1389,9 +1378,10 @@ static int sc850sl_set_ctrl(struct v4l2_ctrl *ctrl)
 	case V4L2_CID_ANALOGUE_GAIN:
 		if (sc850sl->cur_mode->hdr_mode != NO_HDR)
 			goto out_ctrl;
-		sc850sl_get_gain_reg(ctrl->val, &again, &again_fine, &dgain);
-		dev_dbg(&client->dev, "recv_gain:%d set again 0x%x, again_fine 0x%x, set dgain 0x%x\n",
-			ctrl->val, again, again_fine, dgain);
+		sc850sl_get_gain_reg(ctrl->val, &again, &again_fine, &dgain, &dgain_fine);
+		dev_dbg(&client->dev,
+			"recv_gain:%d set again 0x%x, again_fine 0x%x, set dgain 0x%x, dgain_fine 0x%x\n",
+			ctrl->val, again, again_fine, dgain, dgain_fine);
 
 		ret |= sc850sl_write_reg(sc850sl->client,
 					SC850SL_REG_AGAIN,
@@ -1405,6 +1395,10 @@ static int sc850sl_set_ctrl(struct v4l2_ctrl *ctrl)
 					SC850SL_REG_DGAIN,
 					SC850SL_REG_VALUE_08BIT,
 					dgain);
+		ret |= sc850sl_write_reg(sc850sl->client,
+					SC850SL_REG_DGAIN_FINE,
+					SC850SL_REG_VALUE_08BIT,
+					dgain_fine);
 		break;
 	case V4L2_CID_VBLANK:
 		ret = sc850sl_write_reg(sc850sl->client, SC850SL_REG_VTS,
@@ -1688,7 +1682,7 @@ static int sc850sl_probe(struct i2c_client *client,
 		 sc850sl->module_index, facing,
 		 SC850SL_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1714,7 +1708,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc850sl_remove(struct i2c_client *client)
+static void sc850sl_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc850sl *sc850sl = to_sc850sl(sd);
@@ -1730,8 +1724,6 @@ static int sc850sl_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc850sl_power_off(sc850sl);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

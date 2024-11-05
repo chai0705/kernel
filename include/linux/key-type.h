@@ -10,7 +10,6 @@
 
 #include <linux/key.h>
 #include <linux/errno.h>
-#include <linux/android_kabi.h>
 
 #ifdef CONFIG_KEYS
 
@@ -30,6 +29,7 @@ struct kernel_pkey_params;
  * clear the contents.
  */
 struct key_preparsed_payload {
+	const char	*orig_description; /* Actual or proposed description (maybe NULL) */
 	char		*description;	/* Proposed key description (or NULL) */
 	union key_payload payload;	/* Proposed payload */
 	const void	*data;		/* Raw data */
@@ -73,6 +73,7 @@ struct key_type {
 
 	unsigned int flags;
 #define KEY_TYPE_NET_DOMAIN	0x00000001 /* Keys of this type have a net namespace domain */
+#define KEY_TYPE_INSTANT_REAP	0x00000002 /* Keys of this type don't have a delay after expiring */
 
 	/* vet a description */
 	int (*vet_description)(const char *description);
@@ -155,9 +156,6 @@ struct key_type {
 			   const void *in, void *out);
 	int (*asym_verify_signature)(struct kernel_pkey_params *params,
 				     const void *in, const void *in2);
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
 
 	/* internal fields */
 	struct list_head	link;		/* link in types list */

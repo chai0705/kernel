@@ -431,9 +431,9 @@ static int gyro_ewtsa_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gyro_ewtsa_ops);
 }
 
-static int gyro_ewtsa_remove(struct i2c_client *client)
+static void gyro_ewtsa_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gyro_ewtsa_ops);
+	sensor_unregister_device(client, NULL, &gyro_ewtsa_ops);
 }
 
 static const struct i2c_device_id gyro_ewtsa_id[] = {
@@ -443,7 +443,7 @@ static const struct i2c_device_id gyro_ewtsa_id[] = {
 
 static struct i2c_driver gyro_ewtsa_driver = {
 	.probe = gyro_ewtsa_probe,
-	.remove = gyro_ewtsa_remove,
+	.remove = (void *)gyro_ewtsa_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gyro_ewtsa_id,
 	.driver = {

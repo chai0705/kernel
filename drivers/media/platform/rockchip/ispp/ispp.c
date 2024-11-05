@@ -109,7 +109,7 @@ static int rkispp_subdev_link_setup(struct media_entity *entity,
 }
 
 static int rkispp_sd_get_fmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct rkispp_subdev *ispp_sdev = v4l2_get_subdevdata(sd);
@@ -126,15 +126,15 @@ static int rkispp_sd_get_fmt(struct v4l2_subdev *sd,
 
 	mf = &fmt->format;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		if (!cfg)
+		if (!sd_state)
 			goto err;
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 	}
 
 	*mf = ispp_sdev->in_fmt;
 	if (fmt->pad == RKISPP_PAD_SINK && ispp_sdev->dev->inp == INP_ISP) {
 		ret = v4l2_subdev_call(ispp_sdev->remote_sd,
-				       pad, get_fmt, cfg, fmt);
+				       pad, get_fmt, sd_state, fmt);
 		if (!ret) {
 			ispp_fmt = find_fmt(fmt->format.code);
 			if (!ispp_fmt)
@@ -158,7 +158,7 @@ err:
 }
 
 static int rkispp_sd_set_fmt(struct v4l2_subdev *sd,
-			     struct v4l2_subdev_pad_config *cfg,
+			     struct v4l2_subdev_state *sd_state,
 			     struct v4l2_subdev_format *fmt)
 {
 	struct rkispp_subdev *ispp_sdev = v4l2_get_subdevdata(sd);
@@ -173,9 +173,9 @@ static int rkispp_sd_set_fmt(struct v4l2_subdev *sd,
 
 	mf = &fmt->format;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		if (!cfg)
+		if (!sd_state)
 			return -EINVAL;
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 	}
 
 	if (fmt->pad == RKISPP_PAD_SINK) {

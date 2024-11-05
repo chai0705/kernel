@@ -48,7 +48,7 @@
 #define OV13850_MODE_STREAMING		BIT(0)
 
 #define OV13850_REG_EXPOSURE		0x3500
-#define	OV13850_EXPOSURE_MIN		4
+#define	OV13850_EXPOSURE_MIN		2
 #define	OV13850_EXPOSURE_STEP		1
 #define OV13850_VTS_MAX			0x7fff
 
@@ -789,7 +789,7 @@ ov13850_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int ov13850_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -805,7 +805,7 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov13850->mutex);
 		return -ENOTTY;
@@ -827,7 +827,7 @@ static int ov13850_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov13850_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -836,7 +836,7 @@ static int ov13850_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov13850->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov13850->mutex);
 		return -ENOTTY;
@@ -853,7 +853,7 @@ static int ov13850_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov13850_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -864,7 +864,7 @@ static int ov13850_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov13850_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1212,7 +1212,7 @@ static int ov13850_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov13850 *ov13850 = to_ov13850(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov13850_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ov13850->mutex);
@@ -1230,7 +1230,7 @@ static int ov13850_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int ov13850_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1246,13 +1246,8 @@ static int ov13850_enum_frame_interval(struct v4l2_subdev *sd,
 static int ov13850_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	u32 val = 0;
-
-	val = 1 << (OV13850_LANES - 1) |
-	      V4L2_MBUS_CSI2_CHANNEL_0 |
-	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = OV13850_LANES;
 
 	return 0;
 }
@@ -1308,7 +1303,7 @@ static int ov13850_set_ctrl(struct v4l2_ctrl *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_VBLANK:
 		/* Update max exposure while meeting expected vblanking */
-		max = ov13850->cur_mode->height + ctrl->val - 4;
+		max = ov13850->cur_mode->height + ctrl->val - 16;
 		__v4l2_ctrl_modify_range(ov13850->exposure,
 					 ov13850->exposure->minimum, max,
 					 ov13850->exposure->step,
@@ -1398,7 +1393,7 @@ static int ov13850_initialize_controls(struct ov13850 *ov13850)
 				OV13850_VTS_MAX - mode->height,
 				1, vblank_def);
 
-	exposure_max = mode->vts_def - 4;
+	exposure_max = mode->vts_def - 16;
 	ov13850->exposure = v4l2_ctrl_new_std(handler, &ov13850_ctrl_ops,
 				V4L2_CID_EXPOSURE, OV13850_EXPOSURE_MIN,
 				exposure_max, OV13850_EXPOSURE_STEP,
@@ -1584,7 +1579,7 @@ static int ov13850_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ov13850->module_index, facing,
 		 OV13850_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1610,7 +1605,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov13850_remove(struct i2c_client *client)
+static void ov13850_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov13850 *ov13850 = to_ov13850(sd);
@@ -1626,8 +1621,6 @@ static int ov13850_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov13850_power_off(ov13850);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

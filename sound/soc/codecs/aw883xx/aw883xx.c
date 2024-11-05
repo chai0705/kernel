@@ -2491,7 +2491,7 @@ err_sysfs:
 	return ret;
 }
 
-static int aw883xx_i2c_remove(struct i2c_client *i2c)
+static void aw883xx_i2c_remove(struct i2c_client *i2c)
 {
 	struct aw883xx *aw883xx = i2c_get_clientdata(i2c);
 
@@ -2501,11 +2501,6 @@ static int aw883xx_i2c_remove(struct i2c_client *i2c)
 		devm_free_irq(&i2c->dev,
 			gpio_to_irq(aw883xx->irq_gpio),
 			aw883xx);
-
-	if (gpio_is_valid(aw883xx->irq_gpio))
-		devm_gpio_free(&i2c->dev, aw883xx->irq_gpio);
-	if (gpio_is_valid(aw883xx->reset_gpio))
-		devm_gpio_free(&i2c->dev, aw883xx->reset_gpio);
 
 	sysfs_remove_group(&aw883xx->dev->kobj,
 			&aw883xx_attribute_group);
@@ -2522,8 +2517,6 @@ static int aw883xx_i2c_remove(struct i2c_client *i2c)
 		g_awinic_cfg = NULL;
 	}
 	mutex_unlock(&g_aw883xx_lock);
-
-	return 0;
 }
 
 static const struct i2c_device_id aw883xx_i2c_id[] = {

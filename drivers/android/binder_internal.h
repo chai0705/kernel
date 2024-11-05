@@ -215,13 +215,10 @@ struct binder_error {
  *                        and by @lock)
  * @has_async_transaction: async transaction to node in progress
  *                        (protected by @lock)
- * @sched_policy:         minimum scheduling policy for node
- *                        (invariant after initialized)
  * @accept_fds:           file descriptor operations supported for node
  *                        (invariant after initialized)
  * @min_priority:         minimum scheduling priority
  *                        (invariant after initialized)
- * @inherit_rt:           inherit RT scheduling policy from caller
  * @txn_security_ctx:     require sender's security context
  *                        (invariant after initialized)
  * @async_todo:           list of async work items
@@ -259,8 +256,6 @@ struct binder_node {
 		/*
 		 * invariant after initialization
 		 */
-		u8 sched_policy:2;
-		u8 inherit_rt:1;
 		u8 accept_fds:1;
 		u8 txn_security_ctx:1;
 		u8 min_priority;
@@ -330,22 +325,6 @@ struct binder_ref {
 };
 
 /**
- * struct binder_priority - scheduler policy and priority
- * @sched_policy            scheduler policy
- * @prio                    [100..139] for SCHED_NORMAL, [0..99] for FIFO/RT
- *
- * The binder driver supports inheriting the following scheduler policies:
- * SCHED_NORMAL
- * SCHED_BATCH
- * SCHED_FIFO
- * SCHED_RR
- */
-struct binder_priority {
-	unsigned int sched_policy;
-	int prio;
-};
-
-/**
  * struct binder_proc - binder process bookkeeping
  * @proc_node:            element for binder_procs list
  * @threads:              rbtree of binder_threads in this proc
@@ -362,6 +341,9 @@ struct binder_priority {
  * @pid                   PID of group_leader of process
  *                        (invariant after initialized)
  * @tsk                   task_struct for group_leader of process
+ *                        (invariant after initialized)
+ * @cred                  struct cred associated with the `struct file`
+ *                        in binder_open()
  *                        (invariant after initialized)
  * @deferred_work_node:   element for binder_deferred_list
  *                        (protected by binder_deferred_lock)
@@ -425,6 +407,7 @@ struct binder_proc {
 	struct list_head waiting_threads;
 	int pid;
 	struct task_struct *tsk;
+	const struct cred *cred;
 	struct hlist_node deferred_work_node;
 	int deferred_work;
 	int outstanding_txns;
@@ -441,7 +424,7 @@ struct binder_proc {
 	int requested_threads;
 	int requested_threads_started;
 	int tmp_ref;
-	struct binder_priority default_priority;
+	long default_priority;
 	struct dentry *debugfs_entry;
 	struct binder_alloc alloc;
 	struct binder_context *context;
@@ -450,29 +433,6 @@ struct binder_proc {
 	struct dentry *binderfs_entry;
 	bool oneway_spam_detection_enabled;
 };
-
-/**
- * struct binder_proc_ext - binder process bookkeeping
- * @proc:            element for binder_procs list
- * @cred                  struct cred associated with the `struct file`
- *                        in binder_open()
- *                        (invariant after initialized)
- *
- * Extended binder_proc -- needed to add the "cred" field without
- * changing the KMI for binder_proc.
- */
-struct binder_proc_ext {
-	struct binder_proc proc;
-	const struct cred *cred;
-};
-
-static inline const struct cred *binder_get_cred(struct binder_proc *proc)
-{
-	struct binder_proc_ext *eproc;
-
-	eproc = container_of(proc, struct binder_proc_ext, proc);
-	return eproc->cred;
-}
 
 /**
  * struct binder_thread - binder thread bookkeeping
@@ -498,6 +458,8 @@ static inline const struct cred *binder_get_cred(struct binder_proc *proc)
  *                        (only accessed by this thread)
  * @reply_error:          transaction errors reported by target thread
  *                        (protected by @proc->inner_lock)
+ * @ee:                   extended error information from this thread
+ *                        (protected by @proc->inner_lock)
  * @wait:                 wait queue for thread work
  * @stats:                per-thread statistics
  *                        (atomics, no lock needed)
@@ -507,7 +469,6 @@ static inline const struct cred *binder_get_cred(struct binder_proc *proc)
  * @is_dead:              thread is dead and awaiting free
  *                        when outstanding transactions are cleaned up
  *                        (protected by @proc->inner_lock)
- * @task:                 struct task_struct for this thread
  *
  * Bookkeeping structure for binder threads.
  */
@@ -523,11 +484,11 @@ struct binder_thread {
 	bool process_todo;
 	struct binder_error return_error;
 	struct binder_error reply_error;
+	struct binder_extended_error ee;
 	wait_queue_head_t wait;
 	struct binder_stats stats;
 	atomic_t tmp_ref;
 	bool is_dead;
-	struct task_struct *task;
 };
 
 /**
@@ -535,6 +496,7 @@ struct binder_thread {
  * @fixup_entry:          list entry
  * @file:                 struct file to be associated with new fd
  * @offset:               offset in buffer data to this fixup
+ * @target_fd:            fd to use by the target to install @file
  *
  * List element for fd fixups in a transaction. Since file
  * descriptors need to be allocated in the context of the
@@ -545,6 +507,7 @@ struct binder_txn_fd_fixup {
 	struct list_head fixup_entry;
 	struct file *file;
 	size_t offset;
+	int target_fd;
 };
 
 struct binder_transaction {
@@ -556,15 +519,14 @@ struct binder_transaction {
 	struct binder_thread *to_thread;
 	struct binder_transaction *to_parent;
 	unsigned need_reply:1;
-	/* unsigned is_dead:1; */	/* not used at the moment */
+	/* unsigned is_dead:1; */       /* not used at the moment */
 
 	struct binder_buffer *buffer;
-	unsigned int	code;
-	unsigned int	flags;
-	struct binder_priority	priority;
-	struct binder_priority	saved_priority;
-	bool    set_priority_called;
-	kuid_t	sender_euid;
+	unsigned int    code;
+	unsigned int    flags;
+	long    priority;
+	long    saved_priority;
+	kuid_t  sender_euid;
 	struct list_head fd_fixups;
 	binder_uintptr_t security_ctx;
 	/**
@@ -574,8 +536,6 @@ struct binder_transaction {
 	 * during thread teardown
 	 */
 	spinlock_t lock;
-	ANDROID_VENDOR_DATA(1);
-	ANDROID_OEM_DATA_ARRAY(1, 2);
 };
 
 /**

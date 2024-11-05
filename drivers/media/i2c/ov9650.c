@@ -1070,7 +1070,7 @@ static void ov965x_get_default_format(struct v4l2_mbus_framefmt *mf)
 }
 
 static int ov965x_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(ov965x_formats))
@@ -1081,7 +1081,7 @@ static int ov965x_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov965x_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	int i = ARRAY_SIZE(ov965x_formats);
@@ -1165,14 +1165,14 @@ static int ov965x_s_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int ov965x_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov965x *ov965x = to_ov965x(sd);
 	struct v4l2_mbus_framefmt *mf;
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		mf = v4l2_subdev_get_try_format(sd, cfg, 0);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, 0);
 		fmt->format = *mf;
 		return 0;
 	}
@@ -1210,7 +1210,7 @@ static void __ov965x_try_frame_size(struct v4l2_mbus_framefmt *mf,
 }
 
 static int ov965x_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	unsigned int index = ARRAY_SIZE(ov965x_formats);
@@ -1232,8 +1232,9 @@ static int ov965x_set_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov965x->lock);
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
-		if (cfg) {
-			mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		if (sd_state) {
+			mf = v4l2_subdev_get_try_format(sd, sd_state,
+							fmt->pad);
 			*mf = fmt->format;
 		}
 	} else {
@@ -1362,7 +1363,7 @@ static int ov965x_s_stream(struct v4l2_subdev *sd, int on)
 static int ov965x_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct v4l2_mbus_framefmt *mf =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	ov965x_get_default_format(mf);
 	return 0;
@@ -1477,8 +1478,8 @@ static int ov965x_detect_sensor(struct v4l2_subdev *sd)
 		if (ov965x->id == OV9650_ID || ov965x->id == OV9652_ID) {
 			v4l2_info(sd, "Found OV%04X sensor\n", ov965x->id);
 		} else {
-			v4l2_err(sd, "Sensor detection failed (%04X, %d)\n",
-				 ov965x->id, ret);
+			v4l2_err(sd, "Sensor detection failed (%04X)\n",
+				 ov965x->id);
 			ret = -ENODEV;
 		}
 	}
@@ -1581,7 +1582,7 @@ err_mutex:
 	return ret;
 }
 
-static int ov965x_remove(struct i2c_client *client)
+static void ov965x_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov965x *ov965x = to_ov965x(sd);
@@ -1590,8 +1591,6 @@ static int ov965x_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	media_entity_cleanup(&sd->entity);
 	mutex_destroy(&ov965x->lock);
-
-	return 0;
 }
 
 static const struct i2c_device_id ov965x_id[] = {

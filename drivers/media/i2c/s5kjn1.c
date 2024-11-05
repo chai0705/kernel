@@ -870,7 +870,7 @@ static const struct s5kjn1_mode supported_modes_dphy[] = {
 		.reg_list = s5kjn1_10bit_4080x3072_dphy_30fps_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &s5kjn1_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGRBG10_1X10,
@@ -887,7 +887,7 @@ static const struct s5kjn1_mode supported_modes_dphy[] = {
 		.bpp = 10,
 		.reg_list = s5kjn1_10bit_8128x6144_dphy_10fps_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -1063,7 +1063,7 @@ s5kjn1_find_best_fit(struct s5kjn1 *s5kjn1, struct v4l2_subdev_format *fmt)
 }
 
 static int s5kjn1_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -1081,7 +1081,7 @@ static int s5kjn1_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&s5kjn1->mutex);
 		return -ENOTTY;
@@ -1121,7 +1121,7 @@ static int s5kjn1_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int s5kjn1_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -1130,7 +1130,7 @@ static int s5kjn1_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&s5kjn1->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&s5kjn1->mutex);
 		return -ENOTTY;
@@ -1147,7 +1147,7 @@ static int s5kjn1_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int s5kjn1_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -1160,7 +1160,7 @@ static int s5kjn1_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int s5kjn1_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -1208,15 +1208,9 @@ static int s5kjn1_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
-	u32 lane_num = s5kjn1->bus_cfg.bus.mipi_csi2.num_data_lanes;
-	u32 val = 0;
-
-	val = 1 << (lane_num - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 
 	config->type = s5kjn1->bus_cfg.bus_type;
-	config->flags = val;
+	config->bus.mipi_csi2 = s5kjn1->bus_cfg.bus.mipi_csi2;
 
 	return 0;
 }
@@ -1265,7 +1259,7 @@ static void s5kjn1_get_otp(struct otp_info *otp,
 		inf->pdaf.flag = 1;
 		inf->pdaf.gainmap_width = otp->pdaf_data.gainmap_width;
 		inf->pdaf.gainmap_height = otp->pdaf_data.gainmap_height;
-		//inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
+		inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
 		inf->pdaf.dcc_mode = otp->pdaf_data.dcc_mode;
 		inf->pdaf.dcc_dir = otp->pdaf_data.dcc_dir;
 		inf->pdaf.dccmap_width = otp->pdaf_data.dccmap_width;
@@ -1323,7 +1317,7 @@ static int s5kjn1_get_channel_info(struct s5kjn1 *s5kjn1, struct rkmodule_channe
 		return -EINVAL;
 
 	if (ch_info->index == s5kjn1->spd_id && mode->spd) {
-		ch_info->vc = V4L2_MBUS_CSI2_CHANNEL_1;
+		ch_info->vc = 1;
 		ch_info->width = mode->spd->width;
 		ch_info->height = mode->spd->height;
 		ch_info->bus_fmt = mode->spd->bus_fmt;
@@ -1788,7 +1782,7 @@ static int s5kjn1_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct s5kjn1_mode *def_mode = &s5kjn1->support_modes[0];
 
 	mutex_lock(&s5kjn1->mutex);
@@ -1806,7 +1800,7 @@ static int s5kjn1_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int s5kjn1_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -1826,7 +1820,7 @@ static int s5kjn1_enum_frame_interval(struct v4l2_subdev *sd,
 #define DST_WIDTH 4064
 #define DST_HEIGHT 3072
 static int s5kjn1_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -2238,7 +2232,7 @@ continue_probe:
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 s5kjn1->module_index, facing,
 		 S5KJN1_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2263,7 +2257,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int s5kjn1_remove(struct i2c_client *client)
+static void s5kjn1_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct s5kjn1 *s5kjn1 = to_s5kjn1(sd);
@@ -2279,8 +2273,6 @@ static int s5kjn1_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__s5kjn1_power_off(s5kjn1);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

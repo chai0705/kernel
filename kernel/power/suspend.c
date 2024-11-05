@@ -30,7 +30,6 @@
 #include <trace/events/power.h>
 #include <linux/compiler.h>
 #include <linux/moduleparam.h>
-#include <linux/wakeup_reason.h>
 
 #include "power.h"
 
@@ -44,6 +43,10 @@ static const char * const mem_sleep_labels[] = {
 	[PM_SUSPEND_TO_IDLE] = "s2idle",
 	[PM_SUSPEND_STANDBY] = "shallow",
 	[PM_SUSPEND_MEM] = "deep",
+#ifdef CONFIG_ROCKCHIP_LITE_ULTRA_SUSPEND
+	[PM_SUSPEND_MEM_LITE] = "lite",
+	[PM_SUSPEND_MEM_ULTRA] = "ultra",
+#endif
 };
 const char *mem_sleep_states[PM_SUSPEND_MAX];
 
@@ -76,9 +79,11 @@ EXPORT_SYMBOL_GPL(pm_suspend_default_s2idle);
 
 void s2idle_set_ops(const struct platform_s2idle_ops *ops)
 {
-	lock_system_sleep();
+	unsigned int sleep_flags;
+
+	sleep_flags = lock_system_sleep();
 	s2idle_ops = ops;
-	unlock_system_sleep();
+	unlock_system_sleep(sleep_flags);
 }
 
 static void s2idle_begin(void)
@@ -97,8 +102,7 @@ static void s2idle_enter(void)
 	s2idle_state = S2IDLE_STATE_ENTER;
 	raw_spin_unlock_irq(&s2idle_lock);
 
-	get_online_cpus();
-	cpuidle_resume();
+	cpus_read_lock();
 
 	/* Push all the CPUs into the idle loop. */
 	wake_up_all_idle_cpus();
@@ -106,8 +110,7 @@ static void s2idle_enter(void)
 	swait_event_exclusive(s2idle_wait_head,
 		    s2idle_state == S2IDLE_STATE_WAKE);
 
-	cpuidle_pause();
-	put_online_cpus();
+	cpus_read_unlock();
 
 	raw_spin_lock_irq(&s2idle_lock);
 
@@ -139,7 +142,9 @@ static void s2idle_loop(void)
 			break;
 		}
 
-		clear_wakeup_reasons();
+		if (s2idle_ops && s2idle_ops->check)
+			s2idle_ops->check();
+
 		s2idle_enter();
 	}
 
@@ -162,11 +167,13 @@ EXPORT_SYMBOL_GPL(s2idle_wake);
 static bool valid_state(suspend_state_t state)
 {
 	/*
-	 * PM_SUSPEND_STANDBY and PM_SUSPEND_MEM states need low level
-	 * support and need to be valid to the low level
-	 * implementation, no valid callback implies that none are valid.
+	 * The PM_SUSPEND_STANDBY and PM_SUSPEND_MEM states require low-level
+	 * support and need to be valid to the low-level implementation.
+	 *
+	 * No ->valid() or ->enter() callback implies that none are valid.
 	 */
-	return suspend_ops && suspend_ops->valid && suspend_ops->valid(state);
+	return suspend_ops && suspend_ops->valid && suspend_ops->valid(state) &&
+		suspend_ops->enter;
 }
 
 void __init pm_states_init(void)
@@ -202,7 +209,9 @@ __setup("mem_sleep_default=", mem_sleep_default_setup);
  */
 void suspend_set_ops(const struct platform_suspend_ops *ops)
 {
-	lock_system_sleep();
+	unsigned int sleep_flags;
+
+	sleep_flags = lock_system_sleep();
 
 	suspend_ops = ops;
 
@@ -214,16 +223,21 @@ void suspend_set_ops(const struct platform_suspend_ops *ops)
 	}
 	if (valid_state(PM_SUSPEND_MEM)) {
 		mem_sleep_states[PM_SUSPEND_MEM] = mem_sleep_labels[PM_SUSPEND_MEM];
+#ifdef CONFIG_ROCKCHIP_LITE_ULTRA_SUSPEND
+		mem_sleep_states[PM_SUSPEND_MEM_LITE] = mem_sleep_labels[PM_SUSPEND_MEM_LITE];
+		mem_sleep_states[PM_SUSPEND_MEM_ULTRA] = mem_sleep_labels[PM_SUSPEND_MEM_ULTRA];
+#endif
 		if (mem_sleep_default >= PM_SUSPEND_MEM)
 			mem_sleep_current = PM_SUSPEND_MEM;
 	}
 
-	unlock_system_sleep();
+	unlock_system_sleep(sleep_flags);
 }
 EXPORT_SYMBOL_GPL(suspend_set_ops);
 
 /**
  * suspend_valid_only_mem - Generic memory-only valid callback.
+ * @state: Target system sleep state.
  *
  * Platform drivers that implement mem suspend only and only need to check for
  * that in their .valid() callback can use this instead of rolling their own
@@ -237,7 +251,8 @@ EXPORT_SYMBOL_GPL(suspend_valid_only_mem);
 
 static bool sleep_state_supported(suspend_state_t state)
 {
-	return state == PM_SUSPEND_TO_IDLE || (suspend_ops && suspend_ops->enter);
+	return state == PM_SUSPEND_TO_IDLE ||
+	       (valid_state(state) && !cxl_mem_active());
 }
 
 static int platform_suspend_prepare(suspend_state_t state)
@@ -335,6 +350,7 @@ static int suspend_test(int level)
 
 /**
  * suspend_prepare - Prepare for entering system sleep state.
+ * @state: Target system sleep state.
  *
  * Common code run for every system sleep state that can be entered (except for
  * hibernation).  Run suspend notifiers, allocate the "suspend" console and
@@ -359,7 +375,6 @@ static int suspend_prepare(suspend_state_t state)
 	if (!error)
 		return 0;
 
-	log_suspend_abort_reason("One or more tasks refusing to freeze");
 	suspend_stats.failed_freeze++;
 	dpm_save_failed_step(SUSPEND_FREEZE);
 	pm_notifier_call_chain(PM_POST_SUSPEND);
@@ -389,7 +404,7 @@ void __weak arch_suspend_enable_irqs(void)
  */
 static int suspend_enter(suspend_state_t state, bool *wakeup)
 {
-	int error, last_dev;
+	int error;
 
 	error = platform_suspend_prepare(state);
 	if (error)
@@ -397,11 +412,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
 	error = dpm_suspend_late(PMSG_SUSPEND);
 	if (error) {
-		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
-		last_dev %= REC_FAILED_NUM;
 		pr_err("late suspend of devices failed\n");
-		log_suspend_abort_reason("late suspend of %s device failed",
-					 suspend_stats.failed_devs[last_dev]);
 		goto Platform_finish;
 	}
 	error = platform_suspend_prepare_late(state);
@@ -410,11 +421,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
 	error = dpm_suspend_noirq(PMSG_SUSPEND);
 	if (error) {
-		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
-		last_dev %= REC_FAILED_NUM;
 		pr_err("noirq suspend of devices failed\n");
-		log_suspend_abort_reason("noirq suspend of %s device failed",
-					 suspend_stats.failed_devs[last_dev]);
 		goto Platform_early_resume;
 	}
 	error = platform_suspend_prepare_noirq(state);
@@ -429,11 +436,9 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 		goto Platform_wake;
 	}
 
-	error = suspend_disable_secondary_cpus();
-	if (error || suspend_test(TEST_CPUS)) {
-		log_suspend_abort_reason("Disabling non-boot cpus failed");
+	error = pm_sleep_disable_secondary_cpus();
+	if (error || suspend_test(TEST_CPUS))
 		goto Enable_cpus;
-	}
 
 	arch_suspend_disable_irqs();
 	BUG_ON(!irqs_disabled());
@@ -461,7 +466,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 	BUG_ON(irqs_disabled());
 
  Enable_cpus:
-	suspend_enable_secondary_cpus();
+	pm_sleep_enable_secondary_cpus();
 
  Platform_wake:
 	platform_resume_noirq(state);
@@ -504,8 +509,6 @@ int suspend_devices_and_enter(suspend_state_t state)
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
 		pr_err("Some devices failed to suspend, or early wake event detected\n");
-		log_suspend_abort_reason(
-				"Some devices failed to suspend, or early wake event detected");
 		goto Recover_platform;
 	}
 	suspend_test_finish("suspend devices");
@@ -621,6 +624,10 @@ int pm_suspend(suspend_state_t state)
 		return -EINVAL;
 
 	pr_info("suspend entry (%s)\n", mem_sleep_labels[state]);
+#ifdef CONFIG_ROCKCHIP_LITE_ULTRA_SUSPEND
+	if (state == PM_SUSPEND_MEM_LITE || state == PM_SUSPEND_MEM_ULTRA)
+		state = PM_SUSPEND_MEM;
+#endif
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;

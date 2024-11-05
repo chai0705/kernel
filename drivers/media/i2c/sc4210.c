@@ -36,7 +36,6 @@
 #include <media/v4l2-mediabus.h>
 #include <media/v4l2-subdev.h>
 #include <linux/pinctrl/consumer.h>
-#include <stdarg.h>
 #include <linux/linkage.h>
 #include <linux/types.h>
 #include <linux/printk.h>
@@ -1355,7 +1354,7 @@ static const struct sc4210_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 0,
 		.bpp = 10,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 2560,
@@ -1372,10 +1371,10 @@ static const struct sc4210_mode supported_modes_2lane[] = {
 		.mipi_freq_idx = 1,
 		.bpp = 10,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -1395,7 +1394,7 @@ static const struct sc4210_mode supported_modes_4lane[] = {
 		.mipi_freq_idx = 2,
 		.bpp = 10,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 2560,
@@ -1412,10 +1411,10 @@ static const struct sc4210_mode supported_modes_4lane[] = {
 		.mipi_freq_idx = 3,
 		.bpp = 10,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -1531,7 +1530,7 @@ sc4210_find_best_fit(struct sc4210 *sc4210, struct v4l2_subdev_format *fmt)
 }
 
 static int sc4210_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -1548,7 +1547,7 @@ static int sc4210_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc4210->mutex);
 		return -ENOTTY;
@@ -1577,7 +1576,7 @@ static int sc4210_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc4210_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -1586,7 +1585,7 @@ static int sc4210_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc4210->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc4210->mutex);
 		return -ENOTTY;
@@ -1608,7 +1607,7 @@ static int sc4210_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc4210_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -1621,7 +1620,7 @@ static int sc4210_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc4210_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -1658,18 +1657,9 @@ static int sc4210_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *config)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
-	const struct sc4210_mode *mode = sc4210->cur_mode;
-	u32 val = 1 << (sc4210->lane_num - 1) |
-		  V4L2_MBUS_CSI2_CHANNEL_0 |
-		  V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = sc4210->lane_num;
 
 	return 0;
 }
@@ -2248,7 +2238,7 @@ static int sc4210_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(sd, fh->pad, 0);
+			v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc4210_mode *def_mode = &sc4210->support_modes[0];
 
 	mutex_lock(&sc4210->mutex);
@@ -2266,7 +2256,7 @@ static int sc4210_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc4210_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -2723,7 +2713,7 @@ static int sc4210_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		sc4210->module_index, facing,
 		SC4210_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(&sc4210->client->dev,
 			"v4l2 async register subdev failed\n");
@@ -2750,7 +2740,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc4210_remove(struct i2c_client *client)
+static void sc4210_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc4210 *sc4210 = to_sc4210(sd);
@@ -2766,8 +2756,6 @@ static int sc4210_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc4210_power_off(sc4210);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

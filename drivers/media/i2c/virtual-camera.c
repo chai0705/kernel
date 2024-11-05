@@ -203,7 +203,7 @@ static void vcamera_get_default_fmt(struct virtual_camera *vcam)
 }
 
 static int vcamera_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct virtual_camera *vcam = to_virtual_camera(sd);
@@ -213,7 +213,7 @@ static int vcamera_get_fmt(struct v4l2_subdev *sd,
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 		struct v4l2_mbus_framefmt *mf;
 
-		mf = v4l2_subdev_get_try_format(sd, cfg, 0);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, 0);
 		mutex_lock(&vcam->mutex);
 		fmt->format = *mf;
 		mutex_unlock(&vcam->mutex);
@@ -231,7 +231,7 @@ static int vcamera_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int vcamera_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct virtual_camera *vcam = to_virtual_camera(sd);
@@ -253,7 +253,7 @@ static int vcamera_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 		*mf = fmt->format;
 #else
 		mutex_unlock(&vcam->mutex);
@@ -274,7 +274,7 @@ static int vcamera_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int vcamera_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_formats))
@@ -286,7 +286,7 @@ static int vcamera_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int vcamera_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	unsigned int index = fse->index;
@@ -340,7 +340,7 @@ static int vcamera_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&vcam->mutex);
 
-	try_fmt = v4l2_subdev_get_try_format(sd, fh->pad, 0);
+	try_fmt = v4l2_subdev_get_try_format(sd, fh->state, 0);
 	/* Initialize try_fmt */
 	vcamera_fill_fmt(vcam, try_fmt);
 
@@ -570,7 +570,7 @@ destroy_mutex:
 	return ret;
 }
 
-static int vcamera_remove(struct i2c_client *client)
+static void vcamera_remove(struct i2c_client *client)
 {
 	struct virtual_camera *vcam = i2c_get_clientdata(client);
 
@@ -578,8 +578,6 @@ static int vcamera_remove(struct i2c_client *client)
 	media_entity_cleanup(&vcam->subdev.entity);
 	v4l2_ctrl_handler_free(&vcam->ctrl_handler);
 	mutex_destroy(&vcam->mutex);
-
-	return 0;
 }
 
 static const struct i2c_device_id vcamera_id[] = {

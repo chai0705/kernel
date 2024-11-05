@@ -156,7 +156,7 @@ static void adv7181_fill_fmt(const struct adv7181_mode *mode,
 }
 
 static int adv7181_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct adv7181 *adv7181 = to_adv7181(sd);
@@ -169,7 +169,7 @@ static int adv7181_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int adv7181_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct adv7181 *adv7181 = to_adv7181(sd);
@@ -181,7 +181,7 @@ static int adv7181_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int adv7181_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_modes))
@@ -193,7 +193,7 @@ static int adv7181_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int adv7181_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	u32 index = fse->index;
@@ -322,7 +322,7 @@ static int adv7181_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 
 	mutex_lock(&adv7181->mutex);
 
-	try_fmt = v4l2_subdev_get_try_format(sd, fh->pad, 0);
+	try_fmt = v4l2_subdev_get_try_format(sd, fh->state, 0);
 	/* Initialize try_fmt */
 	adv7181_fill_fmt(&supported_modes[0], try_fmt);
 
@@ -501,7 +501,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int adv7181_remove(struct i2c_client *client)
+static void adv7181_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct adv7181 *adv7181 = to_adv7181(sd);
@@ -516,8 +516,6 @@ static int adv7181_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__adv7181_power_off(adv7181);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 static const struct i2c_device_id adv7181_id[] = {

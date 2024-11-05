@@ -18,24 +18,25 @@
 #include <linux/percpu.h>
 #include <linux/refcount.h>
 #include <linux/slab.h>
-#include <linux/syscore_ops.h>
-#include <linux/wakeup_reason.h>
-#include <trace/hooks/gic_v3.h>
-
 
 #include <linux/irqchip.h>
 #include <linux/irqchip/arm-gic-common.h>
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/irqchip/irq-partition-percpu.h>
+#include <linux/bitfield.h>
+#include <linux/bits.h>
+#include <linux/arm-smccc.h>
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
 #include <asm/smp_plat.h>
 #include <asm/virt.h>
 
-#include <trace/hooks/gic.h>
-
 #include "irq-gic-common.h"
+
+#ifdef CONFIG_ROCKCHIP_AMP
+#include <soc/rockchip/rockchip_amp.h>
+#endif
 
 #define GICD_INT_NMI_PRI	(GICD_INT_DEF_PRI & ~0x80)
 
@@ -51,7 +52,24 @@ struct redist_region {
 	bool			single_redist;
 };
 
-static DEFINE_STATIC_KEY_FALSE(gic_arm64_2941627_erratum);
+struct gic_chip_data {
+	struct fwnode_handle	*fwnode;
+	phys_addr_t		dist_phys_base;
+	void __iomem		*dist_base;
+	struct redist_region	*redist_regions;
+	struct rdists		rdists;
+	struct irq_domain	*domain;
+	u64			redist_stride;
+	u32			nr_redist_regions;
+	u64			flags;
+	bool			has_rss;
+	unsigned int		ppi_nr;
+	struct partition_desc	**ppi_descs;
+};
+
+#define T241_CHIPS_MAX		4
+static void __iomem *t241_dist_base_alias[T241_CHIPS_MAX] __read_mostly;
+static DEFINE_STATIC_KEY_FALSE(gic_nvidia_t241_erratum);
 
 static struct gic_chip_data gic_data __read_mostly;
 static DEFINE_STATIC_KEY_TRUE(supports_deactivate_key);
@@ -70,10 +88,10 @@ static DEFINE_STATIC_KEY_TRUE(supports_deactivate_key);
  * are presented to the GIC CPUIF as follow:
  *     (GIC_(R)DIST_PRI[irq] >> 1) | 0x80;
  *
- * If SCR_EL3.FIQ == 1, the values writen to/read from PMR and RPR at non-secure
+ * If SCR_EL3.FIQ == 1, the values written to/read from PMR and RPR at non-secure
  * EL1 are subject to a similar operation thus matching the priorities presented
  * from the (re)distributor when security is enabled. When SCR_EL3.FIQ == 0,
- * these values are unchanched by the GIC.
+ * these values are unchanged by the GIC.
  *
  * see GICv3/GICv4 Architecture Specification (IHI0069D):
  * - section 4.8.1 Non-secure accesses to register fields for Secure interrupt
@@ -119,7 +137,7 @@ EXPORT_SYMBOL(gic_nonsecure_priorities);
 /* ppi_nmi_refs[n] == number of cpus having ppi[n + 16] set as NMI */
 static refcount_t *ppi_nmi_refs;
 
-static struct gic_kvm_info gic_v3_kvm_info;
+static struct gic_kvm_info gic_v3_kvm_info __initdata;
 static DEFINE_PER_CPU(bool, has_rss);
 
 #define MPIDR_RS(mpidr)			(((mpidr) & 0xF0UL) >> 4)
@@ -180,6 +198,39 @@ static inline bool gic_irq_in_rdist(struct irq_data *d)
 	default:
 		return false;
 	}
+}
+
+static inline void __iomem *gic_dist_base_alias(struct irq_data *d)
+{
+	if (static_branch_unlikely(&gic_nvidia_t241_erratum)) {
+		irq_hw_number_t hwirq = irqd_to_hwirq(d);
+		u32 chip;
+
+		/*
+		 * For the erratum T241-FABRIC-4, read accesses to GICD_In{E}
+		 * registers are directed to the chip that owns the SPI. The
+		 * the alias region can also be used for writes to the
+		 * GICD_In{E} except GICD_ICENABLERn. Each chip has support
+		 * for 320 {E}SPIs. Mappings for all 4 chips:
+		 *    Chip0 = 32-351
+		 *    Chip1 = 352-671
+		 *    Chip2 = 672-991
+		 *    Chip3 = 4096-4415
+		 */
+		switch (__get_intid_range(hwirq)) {
+		case SPI_RANGE:
+			chip = (hwirq - 32) / 320;
+			break;
+		case ESPI_RANGE:
+			chip = 3;
+			break;
+		default:
+			unreachable();
+		}
+		return t241_dist_base_alias[chip];
+	}
+
+	return gic_data.dist_base;
 }
 
 static inline void __iomem *gic_dist_base(struct irq_data *d)
@@ -340,35 +391,38 @@ static int gic_peek_irq(struct irq_data *d, u32 offset)
 	if (gic_irq_in_rdist(d))
 		base = gic_data_rdist_sgi_base();
 	else
-		base = gic_data.dist_base;
+		base = gic_dist_base_alias(d);
 
 	return !!(readl_relaxed(base + offset + (index / 32) * 4) & mask);
 }
 
 static void gic_poke_irq(struct irq_data *d, u32 offset)
 {
-	void (*rwp_wait)(void);
 	void __iomem *base;
 	u32 index, mask;
 
 	offset = convert_offset_index(d, offset, &index);
 	mask = 1 << (index % 32);
 
-	if (gic_irq_in_rdist(d)) {
+	if (gic_irq_in_rdist(d))
 		base = gic_data_rdist_sgi_base();
-		rwp_wait = gic_redist_wait_for_rwp;
-	} else {
+	else
 		base = gic_data.dist_base;
-		rwp_wait = gic_dist_wait_for_rwp;
-	}
 
 	writel_relaxed(mask, base + offset + (index / 32) * 4);
-	rwp_wait();
 }
 
 static void gic_mask_irq(struct irq_data *d)
 {
+#ifdef CONFIG_ROCKCHIP_AMP
+	if (rockchip_amp_check_amp_irq(gic_irq(d)))
+		return;
+#endif
 	gic_poke_irq(d, GICD_ICENABLER);
+	if (gic_irq_in_rdist(d))
+		gic_redist_wait_for_rwp();
+	else
+		gic_dist_wait_for_rwp();
 }
 
 static void gic_eoimode1_mask_irq(struct irq_data *d)
@@ -388,6 +442,10 @@ static void gic_eoimode1_mask_irq(struct irq_data *d)
 
 static void gic_unmask_irq(struct irq_data *d)
 {
+#ifdef CONFIG_ROCKCHIP_AMP
+	if (rockchip_amp_check_amp_irq(gic_irq(d)))
+		return;
+#endif
 	gic_poke_irq(d, GICD_ISENABLER);
 }
 
@@ -415,7 +473,11 @@ static int gic_irq_set_irqchip_state(struct irq_data *d,
 		break;
 
 	case IRQCHIP_STATE_MASKED:
-		reg = val ? GICD_ICENABLER : GICD_ISENABLER;
+		if (val) {
+			gic_mask_irq(d);
+			return 0;
+		}
+		reg = GICD_ISENABLER;
 		break;
 
 	default:
@@ -462,16 +524,21 @@ static void gic_irq_set_prio(struct irq_data *d, u8 prio)
 	writeb_relaxed(prio, base + offset + index);
 }
 
-static u32 gic_get_ppi_index(struct irq_data *d)
+static u32 __gic_get_ppi_index(irq_hw_number_t hwirq)
 {
-	switch (get_intid_range(d)) {
+	switch (__get_intid_range(hwirq)) {
 	case PPI_RANGE:
-		return d->hwirq - 16;
+		return hwirq - 16;
 	case EPPI_RANGE:
-		return d->hwirq - EPPI_BASE_INTID + 16;
+		return hwirq - EPPI_BASE_INTID + 16;
 	default:
 		unreachable();
 	}
+}
+
+static u32 gic_get_ppi_index(struct irq_data *d)
+{
+	return __gic_get_ppi_index(d->hwirq);
 }
 
 static int gic_irq_nmi_setup(struct irq_data *d)
@@ -544,39 +611,14 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 	gic_irq_set_prio(d, GICD_INT_DEF_PRI);
 }
 
-static bool gic_arm64_erratum_2941627_needed(struct irq_data *d)
-{
-	enum gic_intid_range range;
-
-	if (!static_branch_unlikely(&gic_arm64_2941627_erratum))
-		return false;
-
-	range = get_intid_range(d);
-
-	/*
-	 * The workaround is needed if the IRQ is an SPI and
-	 * the target cpu is different from the one we are
-	 * executing on.
-	 */
-	return (range == SPI_RANGE || range == ESPI_RANGE) &&
-		!cpumask_test_cpu(raw_smp_processor_id(),
-				  irq_data_get_effective_affinity_mask(d));
-}
-
 static void gic_eoi_irq(struct irq_data *d)
 {
+#ifdef CONFIG_ROCKCHIP_AMP
+	if (rockchip_amp_check_amp_irq(gic_irq(d)))
+		return;
+#endif
 	write_gicreg(gic_irq(d), ICC_EOIR1_EL1);
 	isb();
-
-	if (gic_arm64_erratum_2941627_needed(d)) {
-		/*
-		 * Make sure the GIC stream deactivate packet
-		 * issued by ICC_EOIR1_EL1 has completed before
-		 * deactivating through GICD_IACTIVER.
-		 */
-		dsb(sy);
-		gic_poke_irq(d, GICD_ICACTIVER);
-	}
 }
 
 static void gic_eoimode1_eoi_irq(struct irq_data *d)
@@ -587,18 +629,13 @@ static void gic_eoimode1_eoi_irq(struct irq_data *d)
 	 */
 	if (gic_irq(d) >= 8192 || irqd_is_forwarded_to_vcpu(d))
 		return;
-
-	if (!gic_arm64_erratum_2941627_needed(d))
-		gic_write_dir(gic_irq(d));
-	else
-		gic_poke_irq(d, GICD_ICACTIVER);
+	gic_write_dir(gic_irq(d));
 }
 
 static int gic_set_type(struct irq_data *d, unsigned int type)
 {
 	enum gic_intid_range range;
 	unsigned int irq = gic_irq(d);
-	void (*rwp_wait)(void);
 	void __iomem *base;
 	u32 offset, index;
 	int ret;
@@ -614,17 +651,14 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 	    type != IRQ_TYPE_LEVEL_HIGH && type != IRQ_TYPE_EDGE_RISING)
 		return -EINVAL;
 
-	if (gic_irq_in_rdist(d)) {
+	if (gic_irq_in_rdist(d))
 		base = gic_data_rdist_sgi_base();
-		rwp_wait = gic_redist_wait_for_rwp;
-	} else {
-		base = gic_data.dist_base;
-		rwp_wait = gic_dist_wait_for_rwp;
-	}
+	else
+		base = gic_dist_base_alias(d);
 
 	offset = convert_offset_index(d, GICD_ICFGR, &index);
 
-	ret = gic_configure_irq(index, type, base + offset, rwp_wait);
+	ret = gic_configure_irq(index, type, base + offset, NULL);
 	if (ret && (range == PPI_RANGE || range == EPPI_RANGE)) {
 		/* Misconfigured PPIs are usually not fatal */
 		pr_warn("GIC: PPI INTID%d is secure or misconfigured\n", irq);
@@ -664,82 +698,101 @@ static void gic_deactivate_unhandled(u32 irqnr)
 		if (irqnr < 8192)
 			gic_write_dir(irqnr);
 	} else {
-		gic_write_eoir(irqnr);
-	}
-}
-
-static inline void gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
-{
-	bool irqs_enabled = interrupts_enabled(regs);
-	int err;
-
-	if (irqs_enabled)
-		nmi_enter();
-
-	if (static_branch_likely(&supports_deactivate_key))
-		gic_write_eoir(irqnr);
-	/*
-	 * Leave the PSR.I bit set to prevent other NMIs to be
-	 * received while handling this one.
-	 * PSR.I will be restored when we ERET to the
-	 * interrupted context.
-	 */
-	err = handle_domain_nmi(gic_data.domain, irqnr, regs);
-	if (err)
-		gic_deactivate_unhandled(irqnr);
-
-	if (irqs_enabled)
-		nmi_exit();
-}
-
-static u32 do_read_iar(struct pt_regs *regs)
-{
-	u32 iar;
-
-	if (gic_supports_nmi() && unlikely(!interrupts_enabled(regs))) {
-		u64 pmr;
-
-		/*
-		 * We were in a context with IRQs disabled. However, the
-		 * entry code has set PMR to a value that allows any
-		 * interrupt to be acknowledged, and not just NMIs. This can
-		 * lead to surprising effects if the NMI has been retired in
-		 * the meantime, and that there is an IRQ pending. The IRQ
-		 * would then be taken in NMI context, something that nobody
-		 * wants to debug twice.
-		 *
-		 * Until we sort this, drop PMR again to a level that will
-		 * actually only allow NMIs before reading IAR, and then
-		 * restore it to what it was.
-		 */
-		pmr = gic_read_pmr();
-		gic_pmr_mask_irqs();
+		write_gicreg(irqnr, ICC_EOIR1_EL1);
 		isb();
-
-		iar = gic_read_iar();
-
-		gic_write_pmr(pmr);
-	} else {
-		iar = gic_read_iar();
 	}
-
-	return iar;
 }
 
-static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
+/*
+ * Follow a read of the IAR with any HW maintenance that needs to happen prior
+ * to invoking the relevant IRQ handler. We must do two things:
+ *
+ * (1) Ensure instruction ordering between a read of IAR and subsequent
+ *     instructions in the IRQ handler using an ISB.
+ *
+ *     It is possible for the IAR to report an IRQ which was signalled *after*
+ *     the CPU took an IRQ exception as multiple interrupts can race to be
+ *     recognized by the GIC, earlier interrupts could be withdrawn, and/or
+ *     later interrupts could be prioritized by the GIC.
+ *
+ *     For devices which are tightly coupled to the CPU, such as PMUs, a
+ *     context synchronization event is necessary to ensure that system
+ *     register state is not stale, as these may have been indirectly written
+ *     *after* exception entry.
+ *
+ * (2) Deactivate the interrupt when EOI mode 1 is in use.
+ */
+static inline void gic_complete_ack(u32 irqnr)
 {
+	if (static_branch_likely(&supports_deactivate_key))
+		write_gicreg(irqnr, ICC_EOIR1_EL1);
+
+	isb();
+}
+
+static bool gic_rpr_is_nmi_prio(void)
+{
+	if (!gic_supports_nmi())
+		return false;
+
+	return unlikely(gic_read_rpr() == GICD_INT_RPR_PRI(GICD_INT_NMI_PRI));
+}
+
+static bool gic_irqnr_is_special(u32 irqnr)
+{
+	return irqnr >= 1020 && irqnr <= 1023;
+}
+
+static void __gic_handle_irq(u32 irqnr, struct pt_regs *regs)
+{
+	if (gic_irqnr_is_special(irqnr))
+		return;
+
+	gic_complete_ack(irqnr);
+
+	if (generic_handle_domain_irq(gic_data.domain, irqnr)) {
+		WARN_ONCE(true, "Unexpected interrupt (irqnr %u)\n", irqnr);
+		gic_deactivate_unhandled(irqnr);
+	}
+}
+
+static void __gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
+{
+	if (gic_irqnr_is_special(irqnr))
+		return;
+
+	gic_complete_ack(irqnr);
+
+	if (generic_handle_domain_nmi(gic_data.domain, irqnr)) {
+		WARN_ONCE(true, "Unexpected pseudo-NMI (irqnr %u)\n", irqnr);
+		gic_deactivate_unhandled(irqnr);
+	}
+}
+
+/*
+ * An exception has been taken from a context with IRQs enabled, and this could
+ * be an IRQ or an NMI.
+ *
+ * The entry code called us with DAIF.IF set to keep NMIs masked. We must clear
+ * DAIF.IF (and update ICC_PMR_EL1 to mask regular IRQs) prior to returning,
+ * after handling any NMI but before handling any IRQ.
+ *
+ * The entry code has performed IRQ entry, and if an NMI is detected we must
+ * perform NMI entry/exit around invoking the handler.
+ */
+static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
+{
+	bool is_nmi;
 	u32 irqnr;
 
-	irqnr = do_read_iar(regs);
+	irqnr = gic_read_iar();
 
-	/* Check for special IDs first */
-	if ((irqnr >= 1020 && irqnr <= 1023))
-		return;
+	is_nmi = gic_rpr_is_nmi_prio();
 
-	if (gic_supports_nmi() &&
-	    unlikely(gic_read_rpr() == GICD_INT_RPR_PRI(GICD_INT_NMI_PRI))) {
-		gic_handle_nmi(irqnr, regs);
-		return;
+	if (is_nmi) {
+		nmi_enter();
+		__gic_handle_nmi(irqnr, regs);
+		nmi_exit();
 	}
 
 	if (gic_prio_masking_enabled()) {
@@ -747,16 +800,52 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 		gic_arch_enable_irqs();
 	}
 
-	if (static_branch_likely(&supports_deactivate_key))
-		gic_write_eoir(irqnr);
-	else
-		isb();
+	if (!is_nmi)
+		__gic_handle_irq(irqnr, regs);
+}
 
-	if (handle_domain_irq(gic_data.domain, irqnr, regs)) {
-		WARN_ONCE(true, "Unexpected interrupt received!\n");
-		log_abnormal_wakeup_reason("unexpected HW IRQ %u", irqnr);
-		gic_deactivate_unhandled(irqnr);
-	}
+/*
+ * An exception has been taken from a context with IRQs disabled, which can only
+ * be an NMI.
+ *
+ * The entry code called us with DAIF.IF set to keep NMIs masked. We must leave
+ * DAIF.IF (and ICC_PMR_EL1) unchanged.
+ *
+ * The entry code has performed NMI entry.
+ */
+static void __gic_handle_irq_from_irqsoff(struct pt_regs *regs)
+{
+	u64 pmr;
+	u32 irqnr;
+
+	/*
+	 * We were in a context with IRQs disabled. However, the
+	 * entry code has set PMR to a value that allows any
+	 * interrupt to be acknowledged, and not just NMIs. This can
+	 * lead to surprising effects if the NMI has been retired in
+	 * the meantime, and that there is an IRQ pending. The IRQ
+	 * would then be taken in NMI context, something that nobody
+	 * wants to debug twice.
+	 *
+	 * Until we sort this, drop PMR again to a level that will
+	 * actually only allow NMIs before reading IAR, and then
+	 * restore it to what it was.
+	 */
+	pmr = gic_read_pmr();
+	gic_pmr_mask_irqs();
+	isb();
+	irqnr = gic_read_iar();
+	gic_write_pmr(pmr);
+
+	__gic_handle_nmi(irqnr, regs);
+}
+
+static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
+{
+	if (unlikely(gic_supports_nmi() && !interrupts_enabled(regs)))
+		__gic_handle_irq_from_irqsoff(regs);
+	else
+		__gic_handle_irq_from_irqson(regs);
 }
 
 static u32 gic_get_pribits(void)
@@ -832,8 +921,8 @@ static void __init gic_dist_init(void)
 	for (i = 0; i < GIC_ESPI_NR; i += 4)
 		writel_relaxed(GICD_INT_DEF_PRI_X4, base + GICD_IPRIORITYRnE + i);
 
-	/* Now do the common stuff, and wait for the distributor to drain */
-	gic_dist_config(base, GIC_LINE_NR, gic_dist_wait_for_rwp);
+	/* Now do the common stuff */
+	gic_dist_config(base, GIC_LINE_NR, NULL);
 
 	val = GICD_CTLR_ARE_NS | GICD_CTLR_ENABLE_G1A | GICD_CTLR_ENABLE_G1;
 	if (gic_data.rdists.gicd_typer2 & GICD_TYPER2_nASSGIcap) {
@@ -841,16 +930,27 @@ static void __init gic_dist_init(void)
 		val |= GICD_CTLR_nASSGIreq;
 	}
 
-	/* Enable distributor with ARE, Group1 */
+	/* Enable distributor with ARE, Group1, and wait for it to drain */
 	writel_relaxed(val, base + GICD_CTLR);
+	gic_dist_wait_for_rwp();
 
 	/*
 	 * Set all global interrupts to the boot CPU only. ARE must be
 	 * enabled.
 	 */
 	affinity = gic_mpidr_to_affinity(cpu_logical_map(smp_processor_id()));
-	for (i = 32; i < GIC_LINE_NR; i++)
+	for (i = 32; i < GIC_LINE_NR; i++) {
+#ifdef CONFIG_ROCKCHIP_AMP
+		u64 affinity_amp;
+
+		if (rockchip_amp_need_init_amp_irq(i)) {
+			affinity_amp = rockchip_amp_get_irq_aff(i);
+			gic_write_irouter(affinity_amp, base + GICD_IROUTER + i * 8);
+			continue;
+		}
+#endif
 		gic_write_irouter(affinity, base + GICD_IROUTER + i * 8);
+	}
 
 	for (i = 0; i < GIC_ESPI_NR; i++)
 		gic_write_irouter(affinity, base + GICD_IROUTERnE + i * 8);
@@ -944,8 +1044,9 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 					 void __iomem *ptr)
 {
 	u64 typer = gic_read_typer(ptr + GICR_TYPER);
+	u32 ctlr = readl_relaxed(ptr + GICR_CTLR);
 
-	/* Boot-time cleanip */
+	/* Boot-time cleanup */
 	if ((typer & GICR_TYPER_VLPIS) && (typer & GICR_TYPER_RVPEID)) {
 		u64 val;
 
@@ -963,9 +1064,18 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 
 	gic_data.rdists.has_vlpis &= !!(typer & GICR_TYPER_VLPIS);
 
-	/* RVPEID implies some form of DirectLPI, no matter what the doc says... :-/ */
+	/*
+	 * TYPER.RVPEID implies some form of DirectLPI, no matter what the
+	 * doc says... :-/ And CTLR.IR implies another subset of DirectLPI
+	 * that the ITS driver can make use of for LPIs (and not VLPIs).
+	 *
+	 * These are 3 different ways to express the same thing, depending
+	 * on the revision of the architecture and its relaxations over
+	 * time. Just group them under the 'direct_lpi' banner.
+	 */
 	gic_data.rdists.has_rvpeid &= !!(typer & GICR_TYPER_RVPEID);
 	gic_data.rdists.has_direct_lpi &= (!!(typer & GICR_TYPER_DirectLPIS) |
+					   !!(ctlr & GICR_CTLR_IR) |
 					   gic_data.rdists.has_rvpeid);
 	gic_data.rdists.has_vpend_valid_dirty &= !!(typer & GICR_TYPER_DIRTY);
 
@@ -987,7 +1097,11 @@ static void gic_update_rdist_properties(void)
 	gic_iterate_rdists(__gic_update_rdist_properties);
 	if (WARN_ON(gic_data.ppi_nr == UINT_MAX))
 		gic_data.ppi_nr = 0;
-	pr_info("%d PPIs implemented\n", gic_data.ppi_nr);
+	pr_info("GICv3 features: %d PPIs%s%s\n",
+		gic_data.ppi_nr,
+		gic_data.has_rss ? ", RSS" : "",
+		gic_data.rdists.has_direct_lpi ? ", DirectLPI" : "");
+
 	if (gic_data.rdists.has_vlpis)
 		pr_info("GICv4 features: %s%s%s\n",
 			gic_data.rdists.has_direct_lpi ? "DirectLPI " : "",
@@ -1236,7 +1350,7 @@ static void gic_ipi_send_mask(struct irq_data *d, const struct cpumask *mask)
 	 * Ensure that stores to Normal memory are visible to the
 	 * other CPUs before issuing the IPI.
 	 */
-	wmb();
+	dsb(ishst);
 
 	for_each_cpu(cpu, mask) {
 		u64 cluster_id = MPIDR_TO_SGI_CLUSTER_ID(cpu_logical_map(cpu));
@@ -1281,6 +1395,10 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	int enabled;
 	u64 val;
 
+#ifdef CONFIG_ROCKCHIP_AMP
+	if (rockchip_amp_check_amp_irq(gic_irq(d)))
+		return -EINVAL;
+#endif
 	if (force)
 		cpu = cpumask_first(mask_val);
 	else
@@ -1301,7 +1419,6 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	reg = gic_dist_base(d) + offset + (index * 8);
 	val = gic_mpidr_to_affinity(cpu_logical_map(cpu));
 
-	trace_android_rvh_gic_v3_set_affinity(d, mask_val, &val, force, gic_dist_base(d));
 	gic_write_irouter(val, reg);
 
 	/*
@@ -1310,8 +1427,6 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 	 */
 	if (enabled)
 		gic_unmask_irq(d);
-	else
-		gic_dist_wait_for_rwp();
 
 	irq_data_update_effective_affinity(d, cpumask_of(cpu));
 
@@ -1355,28 +1470,6 @@ static void gic_cpu_pm_init(void)
 #else
 static inline void gic_cpu_pm_init(void) { }
 #endif /* CONFIG_CPU_PM */
-
-#ifdef CONFIG_PM
-void gic_resume(void)
-{
-	trace_android_vh_gic_resume(&gic_data);
-}
-EXPORT_SYMBOL_GPL(gic_resume);
-
-static struct syscore_ops gic_syscore_ops = {
-	.resume = gic_resume,
-};
-
-static void gic_syscore_init(void)
-{
-	register_syscore_ops(&gic_syscore_ops);
-}
-
-#else
-static inline void gic_syscore_init(void) { }
-void gic_resume(void) { }
-#endif
-
 
 static struct irq_chip gic_chip = {
 	.name			= "GICv3",
@@ -1426,12 +1519,6 @@ static int gic_irq_domain_map(struct irq_domain *d, unsigned int irq,
 
 	switch (__get_intid_range(hw)) {
 	case SGI_RANGE:
-		irq_set_percpu_devid(irq);
-		irq_domain_set_info(d, irq, hw, chip, d->host_data,
-				    handle_percpu_devid_fasteoi_ipi,
-				    NULL, NULL);
-		break;
-
 	case PPI_RANGE:
 	case EPPI_RANGE:
 		irq_set_percpu_devid(irq);
@@ -1569,10 +1656,34 @@ static void gic_irq_domain_free(struct irq_domain *domain, unsigned int virq,
 	}
 }
 
+static bool fwspec_is_partitioned_ppi(struct irq_fwspec *fwspec,
+				      irq_hw_number_t hwirq)
+{
+	enum gic_intid_range range;
+
+	if (!gic_data.ppi_descs)
+		return false;
+
+	if (!is_of_node(fwspec->fwnode))
+		return false;
+
+	if (fwspec->param_count < 4 || !fwspec->param[3])
+		return false;
+
+	range = __get_intid_range(hwirq);
+	if (range != PPI_RANGE && range != EPPI_RANGE)
+		return false;
+
+	return true;
+}
+
 static int gic_irq_domain_select(struct irq_domain *d,
 				 struct irq_fwspec *fwspec,
 				 enum irq_domain_bus_token bus_token)
 {
+	unsigned int type, ret, ppi_idx;
+	irq_hw_number_t hwirq;
+
 	/* Not for us */
         if (fwspec->fwnode != d->fwnode)
 		return 0;
@@ -1581,16 +1692,19 @@ static int gic_irq_domain_select(struct irq_domain *d,
 	if (!is_of_node(fwspec->fwnode))
 		return 1;
 
+	ret = gic_irq_domain_translate(d, fwspec, &hwirq, &type);
+	if (WARN_ON_ONCE(ret))
+		return 0;
+
+	if (!fwspec_is_partitioned_ppi(fwspec, hwirq))
+		return d == gic_data.domain;
+
 	/*
 	 * If this is a PPI and we have a 4th (non-null) parameter,
 	 * then we need to match the partition domain.
 	 */
-	if (fwspec->param_count >= 4 &&
-	    fwspec->param[0] == 1 && fwspec->param[3] != 0 &&
-	    gic_data.ppi_descs)
-		return d == partition_get_domain(gic_data.ppi_descs[fwspec->param[1]]);
-
-	return d == gic_data.domain;
+	ppi_idx = __gic_get_ppi_index(hwirq);
+	return d == partition_get_domain(gic_data.ppi_descs[ppi_idx]);
 }
 
 static const struct irq_domain_ops gic_irq_domain_ops = {
@@ -1605,7 +1719,9 @@ static int partition_domain_translate(struct irq_domain *d,
 				      unsigned long *hwirq,
 				      unsigned int *type)
 {
+	unsigned long ppi_intid;
 	struct device_node *np;
+	unsigned int ppi_idx;
 	int ret;
 
 	if (!gic_data.ppi_descs)
@@ -1615,7 +1731,12 @@ static int partition_domain_translate(struct irq_domain *d,
 	if (WARN_ON(!np))
 		return -EINVAL;
 
-	ret = partition_translate_id(gic_data.ppi_descs[fwspec->param[1]],
+	ret = gic_irq_domain_translate(d, fwspec, &ppi_intid, type);
+	if (WARN_ON_ONCE(ret))
+		return 0;
+
+	ppi_idx = __gic_get_ppi_index(ppi_intid);
+	ret = partition_translate_id(gic_data.ppi_descs[ppi_idx],
 				     of_node_to_fwnode(np));
 	if (ret < 0)
 		return ret;
@@ -1678,9 +1799,40 @@ static bool gic_enable_quirk_hip06_07(void *data)
 	return false;
 }
 
-static bool gic_enable_quirk_arm64_2941627(void *data)
+#define T241_CHIPN_MASK		GENMASK_ULL(45, 44)
+#define T241_CHIP_GICDA_OFFSET	0x1580000
+#define SMCCC_SOC_ID_T241	0x036b0241
+
+static bool gic_enable_quirk_nvidia_t241(void *data)
 {
-	static_branch_enable(&gic_arm64_2941627_erratum);
+	s32 soc_id = arm_smccc_get_soc_id_version();
+	unsigned long chip_bmask = 0;
+	phys_addr_t phys;
+	u32 i;
+
+	/* Check JEP106 code for NVIDIA T241 chip (036b:0241) */
+	if ((soc_id < 0) || (soc_id != SMCCC_SOC_ID_T241))
+		return false;
+
+	/* Find the chips based on GICR regions PHYS addr */
+	for (i = 0; i < gic_data.nr_redist_regions; i++) {
+		chip_bmask |= BIT(FIELD_GET(T241_CHIPN_MASK,
+				  (u64)gic_data.redist_regions[i].phys_base));
+	}
+
+	if (hweight32(chip_bmask) < 3)
+		return false;
+
+	/* Setup GICD alias regions */
+	for (i = 0; i < ARRAY_SIZE(t241_dist_base_alias); i++) {
+		if (chip_bmask & BIT(i)) {
+			phys = gic_data.dist_phys_base + T241_CHIP_GICDA_OFFSET;
+			phys |= FIELD_PREP(T241_CHIPN_MASK, i);
+			t241_dist_base_alias[i] = ioremap(phys, SZ_64K);
+			WARN_ON_ONCE(!t241_dist_base_alias[i]);
+		}
+	}
+	static_branch_enable(&gic_nvidia_t241_erratum);
 	return true;
 }
 
@@ -1721,23 +1873,10 @@ static const struct gic_quirk gic_quirks[] = {
 		.init	= gic_enable_quirk_cavium_38539,
 	},
 	{
-		/*
-		 * GIC-700: 2941627 workaround - IP variant [0,1]
-		 *
-		 */
-		.desc	= "GICv3: ARM64 erratum 2941627",
-		.iidr	= 0x0400043b,
-		.mask	= 0xff0e0fff,
-		.init	= gic_enable_quirk_arm64_2941627,
-	},
-	{
-		/*
-		 * GIC-700: 2941627 workaround - IP variant [2]
-		 */
-		.desc	= "GICv3: ARM64 erratum 2941627",
+		.desc	= "GICv3: NVIDIA erratum T241-FABRIC-4",
 		.iidr	= 0x0402043b,
-		.mask	= 0xff0f0fff,
-		.init	= gic_enable_quirk_arm64_2941627,
+		.mask	= 0xffffffff,
+		.init	= gic_enable_quirk_nvidia_t241,
 	},
 	{
 	}
@@ -1778,7 +1917,7 @@ static void gic_enable_nmi_support(void)
 	 * the security state of the GIC (controlled by the GICD_CTRL.DS bit)
 	 * and if Group 0 interrupts can be delivered to Linux in the non-secure
 	 * world as FIQs (controlled by the SCR_EL3.FIQ bit). These affect the
-	 * the ICC_PMR_EL1 register and the priority that software assigns to
+	 * ICC_PMR_EL1 register and the priority that software assigns to
 	 * interrupts:
 	 *
 	 * GICD_CTRL.DS | SCR_EL3.FIQ | ICC_PMR_EL1 | Group 1 priority
@@ -1811,7 +1950,8 @@ static void gic_enable_nmi_support(void)
 		gic_chip.flags |= IRQCHIP_SUPPORTS_NMI;
 }
 
-static int __init gic_init_bases(void __iomem *dist_base,
+static int __init gic_init_bases(phys_addr_t dist_phys_base,
+				 void __iomem *dist_base,
 				 struct redist_region *rdist_regs,
 				 u32 nr_redist_regions,
 				 u64 redist_stride,
@@ -1827,6 +1967,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 		pr_info("GIC: Using split EOI/Deactivate mode\n");
 
 	gic_data.fwnode = handle;
+	gic_data.dist_phys_base = dist_phys_base;
 	gic_data.dist_base = dist_base;
 	gic_data.redist_regions = rdist_regs;
 	gic_data.nr_redist_regions = nr_redist_regions;
@@ -1854,10 +1995,13 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	gic_data.domain = irq_domain_create_tree(handle, &gic_irq_domain_ops,
 						 &gic_data);
 	gic_data.rdists.rdist = alloc_percpu(typeof(*gic_data.rdists.rdist));
-	gic_data.rdists.has_rvpeid = true;
-	gic_data.rdists.has_vlpis = true;
-	gic_data.rdists.has_direct_lpi = true;
-	gic_data.rdists.has_vpend_valid_dirty = true;
+	if (!static_branch_unlikely(&gic_nvidia_t241_erratum)) {
+		/* Disable GICv4.x features for the erratum T241-FABRIC-4 */
+		gic_data.rdists.has_rvpeid = true;
+		gic_data.rdists.has_vlpis = true;
+		gic_data.rdists.has_direct_lpi = true;
+		gic_data.rdists.has_vpend_valid_dirty = true;
+	}
 
 	if (WARN_ON(!gic_data.domain) || WARN_ON(!gic_data.rdists.rdist)) {
 		err = -ENOMEM;
@@ -1867,8 +2011,6 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	irq_domain_update_bus_token(gic_data.domain, DOMAIN_BUS_WIRED);
 
 	gic_data.has_rss = !!(typer & GICD_TYPER_RSS);
-	pr_info("Distributor has %sRange Selector support\n",
-		gic_data.has_rss ? "" : "no ");
 
 	if (typer & GICD_TYPER_MBIS) {
 		err = mbi_init(handle, gic_data.domain);
@@ -1880,15 +2022,18 @@ static int __init gic_init_bases(void __iomem *dist_base,
 
 	gic_update_rdist_properties();
 
+#ifdef CONFIG_ROCKCHIP_AMP
+	rockchip_amp_get_gic_info(GIC_LINE_NR, GIC_V3);
+#endif
 	gic_dist_init();
 	gic_cpu_init();
 	gic_smp_init();
 	gic_cpu_pm_init();
-	gic_syscore_init();
 
 	if (gic_dist_supports_lpis()) {
 		its_init(handle, &gic_data.rdists, gic_data.domain);
 		its_cpu_init();
+		its_lpi_memreserve_init();
 	} else {
 		if (IS_ENABLED(CONFIG_ARM_GIC_V2M))
 			gicv2m_init(handle, gic_data.domain);
@@ -2036,22 +2181,50 @@ static void __init gic_of_setup_kvm_info(struct device_node *node)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
-	gic_set_kvm_info(&gic_v3_kvm_info);
+	vgic_set_kvm_info(&gic_v3_kvm_info);
+}
+
+static void gic_request_region(resource_size_t base, resource_size_t size,
+			       const char *name)
+{
+	if (!request_mem_region(base, size, name))
+		pr_warn_once(FW_BUG "%s region %pa has overlapping address\n",
+			     name, &base);
+}
+
+static void __iomem *gic_of_iomap(struct device_node *node, int idx,
+				  const char *name, struct resource *res)
+{
+	void __iomem *base;
+	int ret;
+
+	ret = of_address_to_resource(node, idx, res);
+	if (ret)
+		return IOMEM_ERR_PTR(ret);
+
+	gic_request_region(res->start, resource_size(res), name);
+	base = of_iomap(node, idx);
+
+	return base ?: IOMEM_ERR_PTR(-ENOMEM);
 }
 
 static int __init gic_of_init(struct device_node *node, struct device_node *parent)
 {
+	phys_addr_t dist_phys_base;
 	void __iomem *dist_base;
 	struct redist_region *rdist_regs;
+	struct resource res;
 	u64 redist_stride;
 	u32 nr_redist_regions;
 	int err, i;
 
-	dist_base = of_iomap(node, 0);
-	if (!dist_base) {
+	dist_base = gic_of_iomap(node, 0, "GICD", &res);
+	if (IS_ERR(dist_base)) {
 		pr_err("%pOF: unable to map gic dist registers\n", node);
-		return -ENXIO;
+		return PTR_ERR(dist_base);
 	}
+
+	dist_phys_base = res.start;
 
 	err = gic_validate_dist_version(dist_base);
 	if (err) {
@@ -2070,12 +2243,8 @@ static int __init gic_of_init(struct device_node *node, struct device_node *pare
 	}
 
 	for (i = 0; i < nr_redist_regions; i++) {
-		struct resource res;
-		int ret;
-
-		ret = of_address_to_resource(node, 1 + i, &res);
-		rdist_regs[i].redist_base = of_iomap(node, 1 + i);
-		if (ret || !rdist_regs[i].redist_base) {
+		rdist_regs[i].redist_base = gic_of_iomap(node, 1 + i, "GICR", &res);
+		if (IS_ERR(rdist_regs[i].redist_base)) {
 			pr_err("%pOF: couldn't map region %d\n", node, i);
 			err = -ENODEV;
 			goto out_unmap_rdist;
@@ -2088,8 +2257,8 @@ static int __init gic_of_init(struct device_node *node, struct device_node *pare
 
 	gic_enable_of_quirks(node, gic_quirks, &gic_data);
 
-	err = gic_init_bases(dist_base, rdist_regs, nr_redist_regions,
-			     redist_stride, &node->fwnode);
+	err = gic_init_bases(dist_phys_base, dist_base, rdist_regs,
+			     nr_redist_regions, redist_stride, &node->fwnode);
 	if (err)
 		goto out_unmap_rdist;
 
@@ -2101,7 +2270,7 @@ static int __init gic_of_init(struct device_node *node, struct device_node *pare
 
 out_unmap_rdist:
 	for (i = 0; i < nr_redist_regions; i++)
-		if (rdist_regs[i].redist_base)
+		if (rdist_regs[i].redist_base && !IS_ERR(rdist_regs[i].redist_base))
 			iounmap(rdist_regs[i].redist_base);
 	kfree(rdist_regs);
 out_unmap_dist:
@@ -2148,6 +2317,7 @@ gic_acpi_parse_madt_redist(union acpi_subtable_headers *header,
 		pr_err("Couldn't map GICR region @%llx\n", redist->base_address);
 		return -ENOMEM;
 	}
+	gic_request_region(redist->base_address, redist->length, "GICR");
 
 	gic_acpi_register_redist(redist->base_address, redist_base);
 	return 0;
@@ -2170,6 +2340,7 @@ gic_acpi_parse_madt_gicc(union acpi_subtable_headers *header,
 	redist_base = ioremap(gicc->gicr_base_address, size);
 	if (!redist_base)
 		return -ENOMEM;
+	gic_request_region(gicc->gicr_base_address, size, "GICR");
 
 	gic_acpi_register_redist(gicc->gicr_base_address, redist_base);
 	return 0;
@@ -2352,14 +2523,20 @@ static void __init gic_acpi_setup_kvm_info(void)
 
 	gic_v3_kvm_info.has_v4 = gic_data.rdists.has_vlpis;
 	gic_v3_kvm_info.has_v4_1 = gic_data.rdists.has_rvpeid;
-	gic_set_kvm_info(&gic_v3_kvm_info);
+	vgic_set_kvm_info(&gic_v3_kvm_info);
+}
+
+static struct fwnode_handle *gsi_domain_handle;
+
+static struct fwnode_handle *gic_v3_get_gsi_domain_id(u32 gsi)
+{
+	return gsi_domain_handle;
 }
 
 static int __init
 gic_acpi_init(union acpi_subtable_headers *header, const unsigned long end)
 {
 	struct acpi_madt_generic_distributor *dist;
-	struct fwnode_handle *domain_handle;
 	size_t size;
 	int i, err;
 
@@ -2371,6 +2548,7 @@ gic_acpi_init(union acpi_subtable_headers *header, const unsigned long end)
 		pr_err("Unable to map GICD registers\n");
 		return -ENOMEM;
 	}
+	gic_request_region(dist->base_address, ACPI_GICV3_DIST_MEM_SIZE, "GICD");
 
 	err = gic_validate_dist_version(acpi_data.dist_base);
 	if (err) {
@@ -2390,18 +2568,19 @@ gic_acpi_init(union acpi_subtable_headers *header, const unsigned long end)
 	if (err)
 		goto out_redist_unmap;
 
-	domain_handle = irq_domain_alloc_fwnode(&dist->base_address);
-	if (!domain_handle) {
+	gsi_domain_handle = irq_domain_alloc_fwnode(&dist->base_address);
+	if (!gsi_domain_handle) {
 		err = -ENOMEM;
 		goto out_redist_unmap;
 	}
 
-	err = gic_init_bases(acpi_data.dist_base, acpi_data.redist_regs,
-			     acpi_data.nr_redist_regions, 0, domain_handle);
+	err = gic_init_bases(dist->base_address, acpi_data.dist_base,
+			     acpi_data.redist_regs, acpi_data.nr_redist_regions,
+			     0, gsi_domain_handle);
 	if (err)
 		goto out_fwhandle_free;
 
-	acpi_set_irq_model(ACPI_IRQ_MODEL_GIC, domain_handle);
+	acpi_set_irq_model(ACPI_IRQ_MODEL_GIC, gic_v3_get_gsi_domain_id);
 
 	if (static_branch_likely(&supports_deactivate_key))
 		gic_acpi_setup_kvm_info();
@@ -2409,7 +2588,7 @@ gic_acpi_init(union acpi_subtable_headers *header, const unsigned long end)
 	return 0;
 
 out_fwhandle_free:
-	irq_domain_free_fwnode(domain_handle);
+	irq_domain_free_fwnode(gsi_domain_handle);
 out_redist_unmap:
 	for (i = 0; i < acpi_data.nr_redist_regions; i++)
 		if (acpi_data.redist_regs[i].redist_base)

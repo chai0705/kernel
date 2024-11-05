@@ -1717,8 +1717,6 @@ static int pl330_submit_req(struct pl330_thread *thrd,
 
 	/* First dry run to check if req is acceptable */
 	ret = _setup_req(pl330, 1, thrd, idx, &xs);
-	if (ret < 0)
-		goto xfer_exit;
 
 	if (ret > pl330->mcbufsz / 2) {
 		dev_info(pl330->ddma.dev, "%s:%d Try increasing mcbufsz (%i/%i)\n",
@@ -1760,7 +1758,7 @@ static void dma_pl330_rqcb(struct dma_pl330_desc *desc, enum pl330_op_err err)
 
 	spin_unlock_irqrestore(&pch->lock, flags);
 
-	tasklet_schedule(&pch->task);
+	tasklet_hi_schedule(&pch->task);
 }
 
 static void pl330_dotask(struct tasklet_struct *t)
@@ -2926,7 +2924,6 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
 
 	desc->cyclic = true;
 	desc->num_periods = len / period_len;
-	desc->txd.flags = flags;
 
 	return &desc->txd;
 }
@@ -2946,6 +2943,8 @@ static struct dma_async_tx_descriptor *pl330_prep_interleaved_dma(
 
 #ifdef CONFIG_NO_GKI
 	nump = xt->nump;
+#else
+	nump = xt->sgl[1].size;
 #endif
 	numf = xt->numf;
 	size = xt->sgl[0].size;
@@ -2990,7 +2989,6 @@ static struct dma_async_tx_descriptor *pl330_prep_interleaved_dma(
 	desc->sgl.size = size;
 	desc->sgl.src_icg = src_icg;
 	desc->sgl.dst_icg = dst_icg;
-	desc->txd.flags = flags;
 
 	if (flags & DMA_PREP_REPEAT) {
 		desc->cyclic = true;
@@ -3052,8 +3050,6 @@ pl330_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dst,
 		desc->rqcfg.brst_len = 1;
 
 	desc->bytes_requested = len;
-
-	desc->txd.flags = flags;
 
 	return &desc->txd;
 }
@@ -3138,7 +3134,6 @@ pl330_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 	}
 
 	/* Return the last desc in the chain */
-	desc->txd.flags = flg;
 	return &desc->txd;
 }
 
@@ -3217,7 +3212,7 @@ static int __maybe_unused pl330_suspend(struct device *dev)
 	struct amba_device *pcdev = to_amba_device(dev);
 
 	pm_runtime_force_suspend(dev);
-	amba_pclk_unprepare(pcdev);
+	clk_unprepare(pcdev->pclk);
 
 	return 0;
 }
@@ -3227,7 +3222,7 @@ static int __maybe_unused pl330_resume(struct device *dev)
 	struct amba_device *pcdev = to_amba_device(dev);
 	int ret;
 
-	ret = amba_pclk_prepare(pcdev);
+	ret = clk_prepare(pcdev->pclk);
 	if (ret)
 		return ret;
 

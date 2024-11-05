@@ -684,9 +684,9 @@ static int compass_akm8963_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &compass_akm8963_ops);
 }
 
-static int compass_akm8963_remove(struct i2c_client *client)
+static void compass_akm8963_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &compass_akm8963_ops);
+	sensor_unregister_device(client, NULL, &compass_akm8963_ops);
 }
 
 static const struct i2c_device_id compass_akm8963_id[] = {
@@ -696,7 +696,7 @@ static const struct i2c_device_id compass_akm8963_id[] = {
 
 static struct i2c_driver compass_akm8963_driver = {
 	.probe = compass_akm8963_probe,
-	.remove = compass_akm8963_remove,
+	.remove = (void *)compass_akm8963_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = compass_akm8963_id,
 	.driver = {

@@ -1,7 +1,7 @@
 /*
  * Include file private to the SOC Interconnect support files.
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -51,6 +51,12 @@
 #else
 #define	SI_MSG(args)
 #endif	/* BCMDBG */
+
+#ifdef DHD_DEBUG_REG_DUMP
+#define	SI_MSG_DBG_REG(args)	printf args
+#else
+#define	SI_MSG_DBG_REG(args)
+#endif /* DHD_DEBUG_REG_DUMP */
 
 #ifdef BCMDBG_SI
 #define	SI_VMSG(args)	printf args
@@ -369,7 +375,7 @@ extern void ai_core_cflags_wo(const si_t *sih, uint32 mask, uint32 val);
 extern uint32 ai_core_sflags(const si_t *sih, uint32 mask, uint32 val);
 extern uint ai_corereg(si_t *sih, uint coreidx, uint regoff, uint mask, uint val);
 extern uint ai_corereg_writeonly(si_t *sih, uint coreidx, uint regoff, uint mask, uint val);
-extern void ai_core_reset(si_t *sih, uint32 bits, uint32 resetbits);
+extern bool ai_core_reset(si_t *sih, uint32 bits, uint32 resetbits);
 extern void ai_d11rsdb_core_reset(si_t *sih, uint32 bits,
 	uint32 resetbits, void *p, volatile void *s);
 extern void ai_core_disable(const si_t *sih, uint32 bits);
@@ -509,5 +515,5 @@ void ai_force_clocks(const si_t *sih, uint clock_state);
 #define nci_wrapper_dump_last_timeout(a, b, c, d, e) (0)
 #define nci_check_enable_backplane_log(a) (FALSE)
 #define nci_wrapper_dump_buf_size(a) (0)
-#endif /* SOCI_NCI_BUS */
+#endif /* !SOCI_NCI_BUS */
 #endif	/* _siutils_priv_h_ */

@@ -773,7 +773,7 @@ err:
 	return ret;
 }
 
-static int sgm3784_remove(struct i2c_client *client)
+static void sgm3784_remove(struct i2c_client *client)
 {
 	struct sgm3784_flash *flash = i2c_get_clientdata(client);
 	unsigned int i;
@@ -785,7 +785,6 @@ static int sgm3784_remove(struct i2c_client *client)
 		media_entity_cleanup(&flash->leds[i].sd.entity);
 	}
 	mutex_destroy(&flash->lock);
-	return 0;
 }
 
 static int __maybe_unused sgm3784_runtime_suspend(struct device *dev)

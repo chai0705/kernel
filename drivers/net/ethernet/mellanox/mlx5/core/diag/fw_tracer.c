@@ -691,7 +691,7 @@ static void mlx5_fw_tracer_handle_traces(struct work_struct *work)
 
 	while (block_timestamp > tracer->last_timestamp) {
 		/* Check block override if it's not the first block */
-		if (!tracer->last_timestamp) {
+		if (tracer->last_timestamp) {
 			u64 *ts_event;
 			/* To avoid block override be the HW in case of buffer
 			 * wraparound, the time stamp of the previous block
@@ -750,7 +750,7 @@ static int mlx5_fw_tracer_set_mtrc_conf(struct mlx5_fw_tracer *tracer)
 	MLX5_SET(mtrc_conf, in, trace_mode, TRACE_TO_MEMORY);
 	MLX5_SET(mtrc_conf, in, log_trace_buffer_size,
 		 ilog2(TRACER_BUFFER_PAGE_NUM));
-	MLX5_SET(mtrc_conf, in, trace_mkey, tracer->buff.mkey.key);
+	MLX5_SET(mtrc_conf, in, trace_mkey, tracer->buff.mkey);
 
 	err = mlx5_core_access_reg(dev, in, sizeof(in), out, sizeof(out),
 				   MLX5_REG_MTRC_CONF, 0, 1);
@@ -821,7 +821,7 @@ static void mlx5_fw_tracer_ownership_change(struct work_struct *work)
 
 	mlx5_core_dbg(tracer->dev, "FWTracer: ownership changed, current=(%d)\n", tracer->owner);
 	if (tracer->owner) {
-		tracer->owner = false;
+		mlx5_fw_tracer_ownership_acquire(tracer);
 		return;
 	}
 
@@ -1033,7 +1033,7 @@ int mlx5_fw_tracer_init(struct mlx5_fw_tracer *tracer)
 
 err_notifier_unregister:
 	mlx5_eq_notifier_unregister(dev, &tracer->nb);
-	mlx5_core_destroy_mkey(dev, &tracer->buff.mkey);
+	mlx5_core_destroy_mkey(dev, tracer->buff.mkey);
 err_dealloc_pd:
 	mlx5_core_dealloc_pd(dev, tracer->buff.pdn);
 err_cancel_work:
@@ -1056,7 +1056,7 @@ void mlx5_fw_tracer_cleanup(struct mlx5_fw_tracer *tracer)
 	if (tracer->owner)
 		mlx5_fw_tracer_ownership_release(tracer);
 
-	mlx5_core_destroy_mkey(tracer->dev, &tracer->buff.mkey);
+	mlx5_core_destroy_mkey(tracer->dev, tracer->buff.mkey);
 	mlx5_core_dealloc_pd(tracer->dev, tracer->buff.pdn);
 }
 
@@ -1074,7 +1074,6 @@ void mlx5_fw_tracer_destroy(struct mlx5_fw_tracer *tracer)
 	mlx5_fw_tracer_clean_saved_traces_array(tracer);
 	mlx5_fw_tracer_free_strings_db(tracer);
 	mlx5_fw_tracer_destroy_log_buf(tracer);
-	flush_workqueue(tracer->work_queue);
 	destroy_workqueue(tracer->work_queue);
 	kvfree(tracer);
 }
@@ -1113,7 +1112,7 @@ int mlx5_fw_tracer_reload(struct mlx5_fw_tracer *tracer)
 	int err;
 
 	if (IS_ERR_OR_NULL(tracer))
-		return -EINVAL;
+		return 0;
 
 	dev = tracer->dev;
 	mlx5_fw_tracer_cleanup(tracer);
@@ -1139,8 +1138,7 @@ static int fw_tracer_event(struct notifier_block *nb, unsigned long action, void
 
 	switch (eqe->sub_type) {
 	case MLX5_TRACER_SUBTYPE_OWNERSHIP_CHANGE:
-		if (test_bit(MLX5_INTERFACE_STATE_UP, &dev->intf_state))
-			queue_work(tracer->work_queue, &tracer->ownership_change_work);
+		queue_work(tracer->work_queue, &tracer->ownership_change_work);
 		break;
 	case MLX5_TRACER_SUBTYPE_TRACES_AVAILABLE:
 		queue_work(tracer->work_queue, &tracer->handle_traces_work);

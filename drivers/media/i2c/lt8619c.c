@@ -1149,11 +1149,11 @@ static int lt8619c_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 
 	cfg->type = V4L2_MBUS_BT656;
 	if (lt8619c->clk_ddrmode_en) {
-		cfg->flags = RKMODULE_CAMERA_BT656_CHANNELS |
+		cfg->bus.parallel.flags = RKMODULE_CAMERA_BT656_CHANNELS |
 			V4L2_MBUS_PCLK_SAMPLE_RISING |
 			V4L2_MBUS_PCLK_SAMPLE_FALLING;
 	} else {
-		cfg->flags = RKMODULE_CAMERA_BT656_CHANNELS |
+		cfg->bus.parallel.flags = RKMODULE_CAMERA_BT656_CHANNELS |
 			V4L2_MBUS_PCLK_SAMPLE_RISING;
 	}
 
@@ -1168,7 +1168,7 @@ static int lt8619c_s_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int lt8619c_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -1197,7 +1197,7 @@ static int lt8619c_get_ctrl(struct v4l2_ctrl *ctrl)
 }
 
 static int lt8619c_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	v4l2_dbg(1, debug, sd, "%s:\n", __func__);
@@ -1217,7 +1217,7 @@ static int lt8619c_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int lt8619c_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1232,7 +1232,7 @@ static int lt8619c_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int lt8619c_get_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct lt8619c *lt8619c = to_lt8619c(sd);
@@ -1288,7 +1288,7 @@ lt8619c_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int lt8619c_set_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct lt8619c *lt8619c = to_lt8619c(sd);
@@ -1296,7 +1296,7 @@ static int lt8619c_set_fmt(struct v4l2_subdev *sd,
 
 	/* is overwritten by get_fmt */
 	u32 code = format->format.code;
-	int ret = lt8619c_get_fmt(sd, cfg, format);
+	int ret = lt8619c_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -1430,7 +1430,7 @@ static int lt8619c_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 	struct lt8619c *lt8619c = to_lt8619c(sd);
 	struct v4l2_bt_timings *bt = &(lt8619c->timings.bt);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct lt8619c_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&lt8619c->confctl_mutex);
@@ -1790,7 +1790,7 @@ static int lt8619c_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 lt8619c->module_index, facing,
 		 LT8619C_NAME, dev_name(sd->dev));
-	err = v4l2_async_register_subdev_sensor_common(sd);
+	err = v4l2_async_register_subdev_sensor(sd);
 	if (err < 0) {
 		v4l2_err(sd, "v4l2 register subdev failed! err:%d\n", err);
 		goto err_subdev;
@@ -1842,7 +1842,7 @@ err_hdl:
 	return err;
 }
 
-static int lt8619c_remove(struct i2c_client *client)
+static void lt8619c_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct lt8619c *lt8619c = to_lt8619c(sd);
@@ -1857,8 +1857,6 @@ static int lt8619c_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&lt8619c->hdl);
 	mutex_destroy(&lt8619c->confctl_mutex);
 	clk_disable_unprepare(lt8619c->xvclk);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

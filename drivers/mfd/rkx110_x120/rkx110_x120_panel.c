@@ -5,6 +5,7 @@
  * Copyright (C) 2022 Rockchip Electronics Co. Ltd.
  */
 
+#include <linux/backlight.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/of_graph.h>
@@ -577,7 +578,7 @@ static struct mipi_dsi_device *serdes_attach_dsi(struct rk_serdes_panel *sd_pane
 
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
-	dsi->mode_flags = MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_EOT_PACKET |
+	dsi->mode_flags = MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_NO_EOT_PACKET |
 			  MIPI_DSI_CLOCK_NON_CONTINUOUS;
 
 	ret = mipi_dsi_attach(dsi);

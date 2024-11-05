@@ -32,8 +32,7 @@ struct mmc_bus_ops {
 	int (*hw_reset)(struct mmc_host *);
 	int (*sw_reset)(struct mmc_host *);
 	bool (*cache_enabled)(struct mmc_host *);
-
-	ANDROID_VENDOR_DATA_ARRAY(1, 2);
+	int (*flush_cache)(struct mmc_host *);
 };
 
 void mmc_attach_bus(struct mmc_host *host, const struct mmc_bus_ops *ops);
@@ -45,7 +44,7 @@ struct device_node *mmc_of_find_child_device(struct mmc_host *host,
 void mmc_init_erase(struct mmc_card *card);
 
 void mmc_set_chip_select(struct mmc_host *host, int mode);
-extern void mmc_set_clock(struct mmc_host *host, unsigned int hz);
+void mmc_set_clock(struct mmc_host *host, unsigned int hz);
 void mmc_set_bus_mode(struct mmc_host *host, unsigned int mode);
 void mmc_set_bus_width(struct mmc_host *host, unsigned int width);
 u32 mmc_select_voltage(struct mmc_host *host, u32 ocr);
@@ -123,6 +122,8 @@ void mmc_release_host(struct mmc_host *host);
 void mmc_get_card(struct mmc_card *card, struct mmc_ctx *ctx);
 void mmc_put_card(struct mmc_card *card, struct mmc_ctx *ctx);
 
+int mmc_card_alternative_gpt_sector(struct mmc_card *card, sector_t *sector);
+
 /**
  *	mmc_claim_host - exclusively claim a host
  *	@host: mmc host to claim
@@ -175,6 +176,14 @@ static inline bool mmc_cache_enabled(struct mmc_host *host)
 		return host->bus_ops->cache_enabled(host);
 
 	return false;
+}
+
+static inline int mmc_flush_cache(struct mmc_host *host)
+{
+	if (host->bus_ops->flush_cache)
+		return host->bus_ops->flush_cache(host);
+
+	return 0;
 }
 
 #endif

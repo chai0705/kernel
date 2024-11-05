@@ -1162,9 +1162,10 @@ static int adf7242_stats_show(struct seq_file *file, void *offset)
 
 static void adf7242_debugfs_init(struct adf7242_local *lp)
 {
-	char debugfs_dir_name[DNAME_INLINE_LEN + 1] = "adf7242-";
+	char debugfs_dir_name[DNAME_INLINE_LEN + 1];
 
-	strncat(debugfs_dir_name, dev_name(&lp->spi->dev), DNAME_INLINE_LEN);
+	snprintf(debugfs_dir_name, sizeof(debugfs_dir_name),
+		 "adf7242-%s", dev_name(&lp->spi->dev));
 
 	lp->debugfs_root = debugfs_create_dir(debugfs_dir_name, NULL);
 
@@ -1304,7 +1305,7 @@ err_alloc_wq:
 	return ret;
 }
 
-static int adf7242_remove(struct spi_device *spi)
+static void adf7242_remove(struct spi_device *spi)
 {
 	struct adf7242_local *lp = spi_get_drvdata(spi);
 
@@ -1317,8 +1318,6 @@ static int adf7242_remove(struct spi_device *spi)
 
 	mutex_destroy(&lp->bmux);
 	ieee802154_free_hw(lp->hw);
-
-	return 0;
 }
 
 static const struct of_device_id adf7242_of_match[] = {

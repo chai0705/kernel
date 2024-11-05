@@ -33,7 +33,9 @@
 #include <linux/clk.h>
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
+#include <linux/string_helpers.h>
 #include <linux/rockchip/cpu.h>
+
 #include <dt-bindings/pinctrl/rockchip.h>
 
 #include "core.h"
@@ -98,6 +100,27 @@
 			{ .type = iom2, .offset = offset2 },		\
 			{ .type = iom3, .offset = offset3 },		\
 		},							\
+	}
+
+#define PIN_BANK_IOMUX_FLAGS_OFFSET_PULL_FLAGS(id, pins, label, iom0,	\
+					       iom1, iom2, iom3,	\
+					       offset0, offset1,	\
+					       offset2, offset3, pull0,	\
+					       pull1, pull2, pull3)	\
+	{								\
+		.bank_num	= id,					\
+		.nr_pins	= pins,					\
+		.name		= label,				\
+		.iomux		= {					\
+			{ .type = iom0, .offset = offset0 },		\
+			{ .type = iom1, .offset = offset1 },		\
+			{ .type = iom2, .offset = offset2 },		\
+			{ .type = iom3, .offset = offset3 },		\
+		},							\
+		.pull_type[0] = pull0,					\
+		.pull_type[1] = pull1,					\
+		.pull_type[2] = pull2,					\
+		.pull_type[3] = pull3,					\
 	}
 
 #define PIN_BANK_DRV_FLAGS(id, pins, label, type0, type1, type2, type3) \
@@ -1132,6 +1155,11 @@ static int rockchip_get_mux(struct rockchip_pin_bank *bank, int pin)
 	if (bank->recalced_mask & BIT(pin))
 		rockchip_get_recalced_mux(bank, pin, &reg, &bit, &mask);
 
+	if (ctrl->type == RK3576) {
+		if ((bank->bank_num == 0) && (pin >= RK_PB4) && (pin <= RK_PB7))
+			reg += 0x1FF4; /* GPIO0_IOC_GPIO0B_IOMUX_SEL_H */
+	}
+
 	if (ctrl->type == RK3588) {
 		if (bank->bank_num == 0) {
 			if ((pin >= RK_PB4) && (pin <= RK_PD7)) {
@@ -1205,6 +1233,7 @@ static int rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 	struct device *dev = info->dev;
 	int iomux_num = (pin / 8);
 	struct regmap *regmap;
+	struct regmap *regmap_sys;
 	int reg, ret, mask, mux_type;
 	u8 bit;
 	u32 data, rmask, route_location, route_reg, route_val;
@@ -1224,6 +1253,8 @@ static int rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 		regmap = (pin % 8 < 4) ? info->regmap_pmu : info->regmap_base;
 	else
 		regmap = info->regmap_base;
+
+	regmap_sys = info->regmap_sys_grf;
 
 	/* get basic quadrupel of mux registers and the correct reg inside */
 	mux_type = bank->iomux[iomux_num].type;
@@ -1257,6 +1288,20 @@ static int rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 				}
 			}
 		}
+	}
+
+	if (ctrl->type == RK3576) {
+		if ((bank->bank_num == 0) && (pin >= RK_PB4) && (pin <= RK_PB7))
+			reg += 0x1FF4; /* GPIO0_IOC_GPIO0B_IOMUX_SEL_H */
+		/* i3c0 weakpull controlled by software */
+		if (((bank->bank_num == 0) && (pin == RK_PC5) && (mux == 0xb)) ||
+		    ((bank->bank_num == 1) && (pin == RK_PD1) && (mux == 0xa)))
+			regmap_update_bits(regmap_sys, 0x4, 0xc000c0, 0xc000c0);
+		/* i3c1 weakpull controlled by software */
+		if (((bank->bank_num == 2) && (pin == RK_PA5) && (mux == 0xe)) ||
+		    ((bank->bank_num == 2) && (pin == RK_PD6) && (mux == 0xc)) ||
+		    ((bank->bank_num == 3) && (pin == RK_PD1) && (mux == 0xb)))
+			regmap_update_bits(regmap_sys, 0x4, 0x3000300, 0x3000300);
 	}
 
 	if (ctrl->type == RK3588) {
@@ -1695,11 +1740,11 @@ static int rv1108_calc_schmitt_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_PULL_PMU_OFFSET		0x40
-#define RV1126_PULL_GRF_GPIO1A0_OFFSET		0x10108
+#define RV1126_PULL_GRF_GPIO1A0_OFFSET	0x10108
 #define RV1126_PULL_PINS_PER_REG	8
 #define RV1126_PULL_BITS_PER_PIN	2
 #define RV1126_PULL_BANK_STRIDE		16
-#define RV1126_GPIO_C4_D7(p)	(p >= 20 && p <= 31) /* GPIO0_C4 ~ GPIO0_D7 */
+#define RV1126_GPIO_C4_D7(p)		(p >= 20 && p <= 31) /* GPIO0_C4 ~ GPIO0_D7 */
 
 static int rv1126_calc_pull_reg_and_bit(struct rockchip_pin_bank *bank,
 					int pin_num, struct regmap **regmap,
@@ -1733,7 +1778,7 @@ static int rv1126_calc_pull_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_DRV_PMU_OFFSET		0x20
-#define RV1126_DRV_GRF_GPIO1A0_OFFSET		0x10090
+#define RV1126_DRV_GRF_GPIO1A0_OFFSET	0x10090
 #define RV1126_DRV_BITS_PER_PIN		4
 #define RV1126_DRV_PINS_PER_REG		4
 #define RV1126_DRV_BANK_STRIDE		32
@@ -1771,7 +1816,7 @@ static int rv1126_calc_drv_reg_and_bit(struct rockchip_pin_bank *bank,
 }
 
 #define RV1126_SCHMITT_PMU_OFFSET		0x60
-#define RV1126_SCHMITT_GRF_GPIO1A0_OFFSET		0x10188
+#define RV1126_SCHMITT_GRF_GPIO1A0_OFFSET	0x10188
 #define RV1126_SCHMITT_BANK_STRIDE		16
 #define RV1126_SCHMITT_PINS_PER_GRF_REG		8
 #define RV1126_SCHMITT_PINS_PER_PMU_REG		8
@@ -2696,6 +2741,142 @@ static int rk3568_calc_drv_reg_and_bit(struct rockchip_pin_bank *bank,
 	return 0;
 }
 
+#define RK3576_DRV_BITS_PER_PIN		4
+#define RK3576_DRV_PINS_PER_REG		4
+#define RK3576_DRV_GPIO0_AL_OFFSET	0x10
+#define RK3576_DRV_GPIO0_BH_OFFSET	0x2014
+#define RK3576_DRV_GPIO1_OFFSET		0x6020
+#define RK3576_DRV_GPIO2_OFFSET		0x6040
+#define RK3576_DRV_GPIO3_OFFSET		0x6060
+#define RK3576_DRV_GPIO4_AL_OFFSET	0x6080
+#define RK3576_DRV_GPIO4_CL_OFFSET	0xA090
+#define RK3576_DRV_GPIO4_DL_OFFSET	0xB098
+
+static int rk3576_calc_drv_reg_and_bit(struct rockchip_pin_bank *bank,
+					int pin_num, struct regmap **regmap,
+					int *reg, u8 *bit)
+{
+	struct rockchip_pinctrl *info = bank->drvdata;
+
+	*regmap = info->regmap_base;
+
+	if (bank->bank_num == 0 && pin_num < 12)
+		*reg = RK3576_DRV_GPIO0_AL_OFFSET;
+	else if (bank->bank_num == 0)
+		*reg = RK3576_DRV_GPIO0_BH_OFFSET - 0xc;
+	else if (bank->bank_num == 1)
+		*reg = RK3576_DRV_GPIO1_OFFSET;
+	else if (bank->bank_num == 2)
+		*reg = RK3576_DRV_GPIO2_OFFSET;
+	else if (bank->bank_num == 3)
+		*reg = RK3576_DRV_GPIO3_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 16)
+		*reg = RK3576_DRV_GPIO4_AL_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 24)
+		*reg = RK3576_DRV_GPIO4_CL_OFFSET - 0x10;
+	else if (bank->bank_num == 4)
+		*reg = RK3576_DRV_GPIO4_DL_OFFSET - 0x18;
+	else
+		dev_err(info->dev, "unsupported bank_num %d\n", bank->bank_num);
+
+	*reg += ((pin_num / RK3576_DRV_PINS_PER_REG) * 4);
+	*bit = pin_num % RK3576_DRV_PINS_PER_REG;
+	*bit *= RK3576_DRV_BITS_PER_PIN;
+
+	return 0;
+}
+
+#define RK3576_PULL_BITS_PER_PIN	2
+#define RK3576_PULL_PINS_PER_REG	8
+#define RK3576_PULL_GPIO0_AL_OFFSET	0x20
+#define RK3576_PULL_GPIO0_BH_OFFSET	0x2028
+#define RK3576_PULL_GPIO1_OFFSET	0x6110
+#define RK3576_PULL_GPIO2_OFFSET	0x6120
+#define RK3576_PULL_GPIO3_OFFSET	0x6130
+#define RK3576_PULL_GPIO4_AL_OFFSET	0x6140
+#define RK3576_PULL_GPIO4_CL_OFFSET	0xA148
+#define RK3576_PULL_GPIO4_DL_OFFSET	0xB14C
+
+static int rk3576_calc_pull_reg_and_bit(struct rockchip_pin_bank *bank,
+					 int pin_num, struct regmap **regmap,
+					 int *reg, u8 *bit)
+{
+	struct rockchip_pinctrl *info = bank->drvdata;
+
+	*regmap = info->regmap_base;
+
+	if (bank->bank_num == 0 && pin_num < 12)
+		*reg = RK3576_PULL_GPIO0_AL_OFFSET;
+	else if (bank->bank_num == 0)
+		*reg = RK3576_PULL_GPIO0_BH_OFFSET - 0x4;
+	else if (bank->bank_num == 1)
+		*reg = RK3576_PULL_GPIO1_OFFSET;
+	else if (bank->bank_num == 2)
+		*reg = RK3576_PULL_GPIO2_OFFSET;
+	else if (bank->bank_num == 3)
+		*reg = RK3576_PULL_GPIO3_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 16)
+		*reg = RK3576_PULL_GPIO4_AL_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 24)
+		*reg = RK3576_PULL_GPIO4_CL_OFFSET - 0x8;
+	else if (bank->bank_num == 4)
+		*reg = RK3576_PULL_GPIO4_DL_OFFSET - 0xc;
+	else
+		dev_err(info->dev, "unsupported bank_num %d\n", bank->bank_num);
+
+	*reg += ((pin_num / RK3576_PULL_PINS_PER_REG) * 4);
+	*bit = pin_num % RK3576_PULL_PINS_PER_REG;
+	*bit *= RK3576_PULL_BITS_PER_PIN;
+
+	return 0;
+}
+
+#define RK3576_SMT_BITS_PER_PIN		1
+#define RK3576_SMT_PINS_PER_REG		8
+#define RK3576_SMT_GPIO0_AL_OFFSET	0x30
+#define RK3576_SMT_GPIO0_BH_OFFSET	0x2040
+#define RK3576_SMT_GPIO1_OFFSET		0x6210
+#define RK3576_SMT_GPIO2_OFFSET		0x6220
+#define RK3576_SMT_GPIO3_OFFSET		0x6230
+#define RK3576_SMT_GPIO4_AL_OFFSET	0x6240
+#define RK3576_SMT_GPIO4_CL_OFFSET	0xA248
+#define RK3576_SMT_GPIO4_DL_OFFSET	0xB24C
+
+static int rk3576_calc_schmitt_reg_and_bit(struct rockchip_pin_bank *bank,
+					   int pin_num,
+					   struct regmap **regmap,
+					   int *reg, u8 *bit)
+{
+	struct rockchip_pinctrl *info = bank->drvdata;
+
+	*regmap = info->regmap_base;
+
+	if (bank->bank_num == 0 && pin_num < 12)
+		*reg = RK3576_SMT_GPIO0_AL_OFFSET;
+	else if (bank->bank_num == 0)
+		*reg = RK3576_SMT_GPIO0_BH_OFFSET - 0x4;
+	else if (bank->bank_num == 1)
+		*reg = RK3576_SMT_GPIO1_OFFSET;
+	else if (bank->bank_num == 2)
+		*reg = RK3576_SMT_GPIO2_OFFSET;
+	else if (bank->bank_num == 3)
+		*reg = RK3576_SMT_GPIO3_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 16)
+		*reg = RK3576_SMT_GPIO4_AL_OFFSET;
+	else if (bank->bank_num == 4 && pin_num < 24)
+		*reg = RK3576_SMT_GPIO4_CL_OFFSET - 0x8;
+	else if (bank->bank_num == 4)
+		*reg = RK3576_SMT_GPIO4_DL_OFFSET - 0xc;
+	else
+		dev_err(info->dev, "unsupported bank_num %d\n", bank->bank_num);
+
+	*reg += ((pin_num / RK3576_SMT_PINS_PER_REG) * 4);
+	*bit = pin_num % RK3576_SMT_PINS_PER_REG;
+	*bit *= RK3576_SMT_BITS_PER_PIN;
+
+	return 0;
+}
+
 #define RK3588_PMU1_IOC_REG		(0x0000)
 #define RK3588_PMU2_IOC_REG		(0x4000)
 #define RK3588_BUS_IOC_REG		(0x8000)
@@ -3018,6 +3199,10 @@ static int rockchip_set_drive_perpin(struct rockchip_pin_bank *bank,
 		rmask_bits = RK3568_DRV_BITS_PER_PIN;
 		ret = (1 << (strength + 1)) - 1;
 		goto config;
+	} else if (ctrl->type == RK3576) {
+		rmask_bits = RK3576_DRV_BITS_PER_PIN;
+		ret = ((strength & BIT(2)) >> 2) | ((strength & BIT(0)) << 2) | (strength & BIT(1));
+		goto config;
 	}
 
 	ret = -EINVAL;
@@ -3189,6 +3374,7 @@ static int rockchip_get_pull(struct rockchip_pin_bank *bank, int pin_num)
 	case RK3528:
 	case RK3562:
 	case RK3568:
+	case RK3576:
 	case RK3588:
 		pull_type = bank->pull_type[pin_num / 8];
 		data >>= bit;
@@ -3251,6 +3437,7 @@ static int rockchip_set_pull(struct rockchip_pin_bank *bank,
 	case RK3528:
 	case RK3562:
 	case RK3568:
+	case RK3576:
 	case RK3588:
 		pull_type = bank->pull_type[pin_num / 8];
 		ret = -EINVAL;
@@ -3555,11 +3742,24 @@ static int rockchip_pmx_set(struct pinctrl_dev *pctldev, unsigned selector,
 	return 0;
 }
 
+static int rockchip_pmx_gpio_set_direction(struct pinctrl_dev *pctldev,
+					   struct pinctrl_gpio_range *range,
+					   unsigned offset,
+					   bool input)
+{
+	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
+	struct rockchip_pin_bank *bank;
+
+	bank = pin_to_bank(info, offset);
+	return rockchip_set_mux(bank, offset - bank->pin_base, RK_FUNC_GPIO);
+}
+
 static const struct pinmux_ops rockchip_pmx_ops = {
 	.get_functions_count	= rockchip_pmx_get_funcs_count,
 	.get_function_name	= rockchip_pmx_get_func_name,
 	.get_function_groups	= rockchip_pmx_get_groups,
 	.set_mux		= rockchip_pmx_set,
+	.gpio_set_direction	= rockchip_pmx_gpio_set_direction,
 };
 
 /*
@@ -3589,6 +3789,7 @@ static bool rockchip_pinconf_pull_valid(struct rockchip_pin_ctrl *ctrl,
 	case RK3528:
 	case RK3562:
 	case RK3568:
+	case RK3576:
 	case RK3588:
 		return (pull != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT);
 	}
@@ -3987,6 +4188,7 @@ static int rockchip_pinctrl_register(struct platform_device *pdev,
 	struct pinctrl_pin_desc *pindesc, *pdesc;
 	struct rockchip_pin_bank *pin_bank;
 	struct device *dev = &pdev->dev;
+	char **pin_names;
 	int pin, bank, ret;
 	int k;
 
@@ -4006,10 +4208,14 @@ static int rockchip_pinctrl_register(struct platform_device *pdev,
 	pdesc = pindesc;
 	for (bank = 0, k = 0; bank < info->ctrl->nr_banks; bank++) {
 		pin_bank = &info->ctrl->pin_banks[bank];
+
+		pin_names = devm_kasprintf_strarray(dev, pin_bank->name, pin_bank->nr_pins);
+		if (IS_ERR(pin_names))
+			return PTR_ERR(pin_names);
+
 		for (pin = 0; pin < pin_bank->nr_pins; pin++, k++) {
 			pdesc->number = k;
-			pdesc->name = kasprintf(GFP_KERNEL, "%s-%d",
-						pin_bank->name, pin);
+			pdesc->name = pin_names[pin];
 			pdesc++;
 		}
 
@@ -4075,7 +4281,8 @@ static struct rockchip_pin_ctrl *rockchip_pinctrl_get_soc_data(
 
 			/* preset iomux offset value, set new start value */
 			if (iom->offset >= 0) {
-				if ((iom->type & IOMUX_SOURCE_PMU) || (iom->type & IOMUX_L_SOURCE_PMU))
+				if ((iom->type & IOMUX_SOURCE_PMU) ||
+				    (iom->type & IOMUX_L_SOURCE_PMU))
 					pmu_offs = iom->offset;
 				else
 					grf_offs = iom->offset;
@@ -4297,6 +4504,15 @@ static int rockchip_pinctrl_probe(struct platform_device *pdev)
 		}
 	}
 
+	/* try to find the optional reference to the sys_grf syscon */
+	node = of_parse_phandle(np, "rockchip,sys-grf", 0);
+	if (node) {
+		info->regmap_sys_grf = syscon_node_to_regmap(node);
+		of_node_put(node);
+		if (IS_ERR(info->regmap_sys_grf))
+			return PTR_ERR(info->regmap_sys_grf);
+	}
+
 	/* try to find the optional reference to the pmu syscon */
 	node = of_parse_phandle(np, "rockchip,pmu", 0);
 	if (node) {
@@ -4472,11 +4688,11 @@ static struct rockchip_pin_bank rv1126_pin_banks[] = {
 			     IOMUX_WIDTH_4BIT | IOMUX_L_SOURCE_PMU,
 			     IOMUX_WIDTH_4BIT),
 	PIN_BANK_IOMUX_FLAGS_OFFSET(1, 32, "gpio1",
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     IOMUX_WIDTH_4BIT,
-			     0x10010, 0x10018, 0x10020, 0x10028),
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    IOMUX_WIDTH_4BIT,
+				    0x10010, 0x10018, 0x10020, 0x10028),
 	PIN_BANK_IOMUX_FLAGS(2, 32, "gpio2",
 			     IOMUX_WIDTH_4BIT,
 			     IOMUX_WIDTH_4BIT,
@@ -5003,6 +5219,35 @@ static struct rockchip_pin_ctrl rk3568_pin_ctrl __maybe_unused = {
 	.schmitt_calc_reg	= rk3568_calc_schmitt_reg_and_bit,
 };
 
+#define RK3576_PIN_BANK(ID, LABEL, OFFSET0, OFFSET1, OFFSET2, OFFSET3)		\
+	PIN_BANK_IOMUX_FLAGS_OFFSET_PULL_FLAGS(ID, 32, LABEL,			\
+					       IOMUX_WIDTH_4BIT,		\
+					       IOMUX_WIDTH_4BIT,		\
+					       IOMUX_WIDTH_4BIT,		\
+					       IOMUX_WIDTH_4BIT,		\
+					       OFFSET0, OFFSET1,		\
+					       OFFSET2, OFFSET3,		\
+					       PULL_TYPE_IO_1, PULL_TYPE_IO_1,	\
+					       PULL_TYPE_IO_1, PULL_TYPE_IO_1)
+
+static struct rockchip_pin_bank rk3576_pin_banks[] = {
+	RK3576_PIN_BANK(0, "gpio0", 0, 0x8, 0x2004, 0x200C),
+	RK3576_PIN_BANK(1, "gpio1", 0x4020, 0x4028, 0x4030, 0x4038),
+	RK3576_PIN_BANK(2, "gpio2", 0x4040, 0x4048, 0x4050, 0x4058),
+	RK3576_PIN_BANK(3, "gpio3", 0x4060, 0x4068, 0x4070, 0x4078),
+	RK3576_PIN_BANK(4, "gpio4", 0x4080, 0x4088, 0xA390, 0xB398),
+};
+
+static struct rockchip_pin_ctrl rk3576_pin_ctrl __maybe_unused = {
+	.pin_banks		= rk3576_pin_banks,
+	.nr_banks		= ARRAY_SIZE(rk3576_pin_banks),
+	.label			= "RK3576-GPIO",
+	.type			= RK3576,
+	.pull_calc_reg		= rk3576_calc_pull_reg_and_bit,
+	.drv_calc_reg		= rk3576_calc_drv_reg_and_bit,
+	.schmitt_calc_reg	= rk3576_calc_schmitt_reg_and_bit,
+};
+
 static struct rockchip_pin_bank rk3588_pin_banks[] = {
 	RK3588_PIN_BANK_FLAGS(0, 32, "gpio0",
 			      IOMUX_WIDTH_4BIT, PULL_TYPE_IO_1V8_ONLY),
@@ -5105,6 +5350,10 @@ static const struct of_device_id rockchip_pinctrl_dt_match[] = {
 	{ .compatible = "rockchip,rk3568-pinctrl",
 		.data = &rk3568_pin_ctrl },
 #endif
+#ifdef CONFIG_CPU_RK3576
+	{ .compatible = "rockchip,rk3576-pinctrl",
+		.data = &rk3576_pin_ctrl },
+#endif
 #ifdef CONFIG_CPU_RK3588
 	{ .compatible = "rockchip,rk3588-pinctrl",
 		.data = &rk3588_pin_ctrl },
@@ -5167,8 +5416,8 @@ int rk_iomux_set(int bank, int pin, int mux)
 	mutex_lock(&iomux_lock);
 	for (i = 0; i < info->ngroups; i++) {
 		grp = &info->groups[i];
-		for (j = 0; j < grp->npins; i++) {
-			if (grp->pins[i] == (gpio->pin_base + pin)) {
+		for (j = 0; j < grp->npins; j++) {
+			if (grp->pins[j] == (gpio->pin_base + pin)) {
 				cfg = grp->data;
 				break;
 			}

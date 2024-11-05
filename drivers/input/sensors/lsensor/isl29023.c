@@ -243,9 +243,9 @@ static int light_isl29023_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_isl29023_ops);
 }
 
-static int light_isl29023_remove(struct i2c_client *client)
+static void light_isl29023_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_isl29023_ops);
+	sensor_unregister_device(client, NULL, &light_isl29023_ops);
 }
 
 static const struct i2c_device_id light_isl29023_id[] = {
@@ -255,7 +255,7 @@ static const struct i2c_device_id light_isl29023_id[] = {
 
 static struct i2c_driver light_isl29023_driver = {
 	.probe = light_isl29023_probe,
-	.remove = light_isl29023_remove,
+	.remove = (void *)light_isl29023_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = light_isl29023_id,
 	.driver = {

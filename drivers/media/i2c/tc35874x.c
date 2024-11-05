@@ -188,7 +188,7 @@ static const struct tc35874x_mode supported_modes[] = {
 
 struct tc35874x_state {
 	struct tc35874x_platform_data pdata;
-	struct v4l2_fwnode_bus_mipi_csi2 bus;
+	struct v4l2_mbus_config_mipi_csi2 bus;
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler hdl;
@@ -899,7 +899,7 @@ static void tc35874x_set_csi(struct v4l2_subdev *sd)
 			((lanes > 3) ? MASK_D3M_HSTXVREGEN : 0x0));
 
 	i2c_wr32(sd, TXOPTIONCNTRL, (state->bus.flags &
-		 V4L2_MBUS_CSI2_CONTINUOUS_CLOCK) ? MASK_CONTCLKMODE : 0);
+		 V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK) ? 0 : MASK_CONTCLKMODE);
 	i2c_wr32(sd, STARTCNTRL, MASK_START);
 	i2c_wr32(sd, CSI_START, MASK_STRT);
 
@@ -1668,24 +1668,7 @@ static int tc35874x_g_mbus_config(struct v4l2_subdev *sd,
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
 
 	/* Support for non-continuous CSI-2 clock is missing in the driver */
-	cfg->flags = V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	switch (state->csi_lanes_in_use) {
-	case 1:
-		cfg->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		cfg->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		cfg->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		cfg->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-	default:
-		return -EINVAL;
-	}
+	cfg->bus.mipi_csi2.num_data_lanes = state->csi_lanes_in_use;
 
 	return 0;
 }
@@ -1703,7 +1686,7 @@ static int tc35874x_s_stream(struct v4l2_subdev *sd, int enable)
 /* --------------- PAD OPS --------------- */
 
 static int tc35874x_enum_mbus_code(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -1722,7 +1705,7 @@ static int tc35874x_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int tc35874x_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	v4l2_dbg(1, debug, sd, "%s:\n", __func__);
@@ -1742,7 +1725,7 @@ static int tc35874x_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int tc35874x_enum_frame_interval(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1757,7 +1740,7 @@ static int tc35874x_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int tc35874x_get_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct tc35874x_state *state = to_state(sd);
@@ -1819,14 +1802,14 @@ tc35874x_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int tc35874x_set_fmt(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_format *format)
 {
 	struct tc35874x_state *state = to_state(sd);
 	const struct tc35874x_mode *mode;
 
 	u32 code = format->format.code; /* is overwritten by get_fmt */
-	int ret = tc35874x_get_fmt(sd, cfg, format);
+	int ret = tc35874x_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -2307,7 +2290,7 @@ static int tc35874x_probe(struct i2c_client *client,
 	/* platform data */
 	if (pdata) {
 		state->pdata = *pdata;
-		state->bus.flags = V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+		state->bus.flags = 0;
 	} else {
 		err = tc35874x_probe_of(state);
 		if (err == -ENODEV)
@@ -2452,7 +2435,7 @@ err_hdl:
 	return err;
 }
 
-static int tc35874x_remove(struct i2c_client *client)
+static void tc35874x_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct tc35874x_state *state = to_state(sd);
@@ -2467,8 +2450,6 @@ static int tc35874x_remove(struct i2c_client *client)
 	mutex_destroy(&state->confctl_mutex);
 	media_entity_cleanup(&sd->entity);
 	v4l2_ctrl_handler_free(&state->hdl);
-
-	return 0;
 }
 
 static struct i2c_device_id tc35874x_id[] = {

@@ -1349,7 +1349,7 @@ static int rk1608_g_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int rk1608_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct rk1608_state *pdata = to_state(sd);
@@ -1357,7 +1357,7 @@ static int rk1608_set_fmt(struct v4l2_subdev *sd,
 	v4l2_subdev_call(pdata->sensor[sd->grp_id],
 			 pad,
 			 set_fmt,
-			 cfg,
+			 sd_state,
 			 fmt);
 
 	return 0;
@@ -2740,7 +2740,7 @@ static int rk1608_probe(struct spi_device *spi)
 	return 0;
 }
 
-static int rk1608_remove(struct spi_device *spi)
+static void rk1608_remove(struct spi_device *spi)
 {
 	struct rk1608_state *rk1608 = spi_get_drvdata(spi);
 
@@ -2750,8 +2750,6 @@ static int rk1608_remove(struct spi_device *spi)
 	mutex_destroy(&rk1608->sensor_lock);
 	mutex_destroy(&rk1608->spi2apb_lock);
 	rk1608_dev_unregister(rk1608);
-
-	return 0;
 }
 
 static const struct spi_device_id rk1608_id[] = {

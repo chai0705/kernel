@@ -126,7 +126,7 @@ int rockchip_drm_direct_show_alloc_buffer(struct drm_device *drm,
 
 	/* to get dma buffer fd */
 	mutex_lock(&drm->object_name_lock);
-	dmabuf = drm->driver->gem_prime_export(obj, 0);
+	dmabuf = obj->funcs->export(obj, 0);
 	if (IS_ERR(dmabuf)) {
 		mutex_unlock(&drm->object_name_lock);
 		goto err_gem_free;

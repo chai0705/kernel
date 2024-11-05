@@ -231,9 +231,9 @@ static int proximity_al3006_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &proximity_al3006_ops);
 }
 
-static int proximity_al3006_remove(struct i2c_client *client)
+static void proximity_al3006_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &proximity_al3006_ops);
+	sensor_unregister_device(client, NULL, &proximity_al3006_ops);
 }
 
 static const struct i2c_device_id proximity_al3006_id[] = {
@@ -243,7 +243,7 @@ static const struct i2c_device_id proximity_al3006_id[] = {
 
 static struct i2c_driver proximity_al3006_driver = {
 	.probe = proximity_al3006_probe,
-	.remove = proximity_al3006_remove,
+	.remove = (void *)proximity_al3006_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = proximity_al3006_id,
 	.driver = {

@@ -107,9 +107,9 @@ static inline struct rkx120_pwm_chip *to_rkx120_pwm_chip(struct pwm_chip *c)
 	return container_of(c, struct rkx120_pwm_chip, chip);
 }
 
-static void rkx120_pwm_get_state(struct pwm_chip *chip,
-				    struct pwm_device *pwm,
-				    struct pwm_state *state)
+static int rkx120_pwm_get_state(struct pwm_chip *chip,
+				struct pwm_device *pwm,
+				struct pwm_state *state)
 {
 	struct rkx120_pwm_chip *pc = to_rkx120_pwm_chip(chip);
 	u32 enable_conf = pc->data->enable_conf;
@@ -133,6 +133,8 @@ static void rkx120_pwm_get_state(struct pwm_chip *chip,
 		state->polarity = PWM_POLARITY_INVERSED;
 	else
 		state->polarity = PWM_POLARITY_NORMAL;
+
+	return 0;
 }
 
 static void rkx120_pwm_config(struct pwm_chip *chip, struct pwm_device *pwm,
@@ -379,7 +381,9 @@ static int rkx120_pwm_remove(struct platform_device *pdev)
 {
 	struct rkx120_pwm_chip *pc = platform_get_drvdata(pdev);
 
-	return pwmchip_remove(&pc->chip);
+	pwmchip_remove(&pc->chip);
+
+	return 0;
 }
 
 static struct platform_driver rkx120_pwm_driver = {
@@ -391,3 +395,5 @@ static struct platform_driver rkx120_pwm_driver = {
 	.remove = rkx120_pwm_remove,
 };
 module_platform_driver(rkx120_pwm_driver);
+
+MODULE_LICENSE("GPL");

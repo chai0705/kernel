@@ -13,17 +13,17 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mfd/rk808.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
 #include <linux/platform_device.h>
+#include <linux/pm.h>
+#include <linux/property.h>
+#include <linux/slab.h>
+
 #include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinmux.h>
-#include <linux/pm.h>
-#include <linux/slab.h>
 
 #include "core.h"
 #include "pinconf.h"
@@ -476,7 +476,7 @@ static int _rk805_pinctrl_set_mux(struct pinctrl_dev *pctldev,
 	if (!pci->pin_cfg[offset].fun_msk)
 		return 0;
 
-	if (mux == RK805_PINMUX_GPIO)  {
+	if (mux == RK805_PINMUX_GPIO) {
 		ret = regmap_update_bits(pci->rk808->regmap,
 					 pci->pin_cfg[offset].reg,
 					 pci->pin_cfg[offset].fun_msk,
@@ -682,6 +682,8 @@ static int rk805_pinctrl_probe(struct platform_device *pdev)
 	struct device_node *np;
 	int ret;
 
+	device_set_node(&pdev->dev, dev_fwnode(pdev->dev.parent));
+
 	pci = devm_kzalloc(&pdev->dev, sizeof(*pci), GFP_KERNEL);
 	if (!pci)
 		return -ENOMEM;
@@ -690,8 +692,7 @@ static int rk805_pinctrl_probe(struct platform_device *pdev)
 	np = of_get_child_by_name(pdev->dev.parent->of_node, "pinctrl_rk8xx");
 	if (np)
 		pci->dev->of_node = np;
-	else
-		pci->dev->of_node = pdev->dev.parent->of_node;
+
 	pci->rk808 = dev_get_drvdata(pdev->dev.parent);
 
 	platform_set_drvdata(pdev, pci);
@@ -760,10 +761,8 @@ static int rk805_pinctrl_probe(struct platform_device *pdev)
 
 	if (np)
 		pci->gpio_chip.of_node = np;
-	else
-		pci->gpio_chip.of_node = pdev->dev.parent->of_node;
 
-	/* Add gpiochip */
+	/* Add gpio chip */
 	ret = devm_gpiochip_add_data(&pdev->dev, &pci->gpio_chip, pci);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Couldn't add gpiochip\n");

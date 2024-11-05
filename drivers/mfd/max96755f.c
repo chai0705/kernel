@@ -355,13 +355,11 @@ static int max96755f_i2c_probe(struct i2c_client *client)
 	return 0;
 }
 
-static int max96755f_i2c_remove(struct i2c_client *client)
+static void max96755f_i2c_remove(struct i2c_client *client)
 {
 	struct max96755f *max96755f = i2c_get_clientdata(client);
 
 	i2c_mux_del_adapters(max96755f->muxc);
-
-	return 0;
 }
 
 static void max96755f_i2c_shutdown(struct i2c_client *client)

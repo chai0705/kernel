@@ -804,7 +804,7 @@ err_cleanup:
 	return ret;
 }
 
-static int fp5510_remove(struct i2c_client *client)
+static void fp5510_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct fp5510_device *fp5510_dev = sd_to_fp5510_vcm(sd);
@@ -814,8 +814,6 @@ static int fp5510_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__fp5510_power_off(fp5510_dev);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 static int __maybe_unused fp5510_vcm_resume(struct device *dev)

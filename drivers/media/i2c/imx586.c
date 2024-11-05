@@ -812,7 +812,7 @@ static const struct imx586_mode supported_modes[] = {
 		.reg_list = imx586_linear_10bit_4000x3000_30fps_nopd_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 8000,
@@ -829,7 +829,7 @@ static const struct imx586_mode supported_modes[] = {
 		.reg_list = imx586_linear_10bit_full_raw_6fps_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 8000,
@@ -846,7 +846,7 @@ static const struct imx586_mode supported_modes[] = {
 		.reg_list = imx586_linear_10bit_full_remosaic_6fps_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 8000,
@@ -863,7 +863,7 @@ static const struct imx586_mode supported_modes[] = {
 		.reg_list = imx586_linear_10bit_full_remosaic_10fps_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 1,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -993,7 +993,7 @@ imx586_find_best_fit(struct imx586 *imx586, struct v4l2_subdev_format *fmt)
 }
 
 static int imx586_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx586 *imx586 = to_imx586(sd);
@@ -1010,7 +1010,7 @@ static int imx586_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&imx586->mutex);
 		return -ENOTTY;
@@ -1041,7 +1041,7 @@ static int imx586_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx586_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx586 *imx586 = to_imx586(sd);
@@ -1050,7 +1050,7 @@ static int imx586_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&imx586->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&imx586->mutex);
 		return -ENOTTY;
@@ -1080,7 +1080,7 @@ static int imx586_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx586_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct imx586 *imx586 = to_imx586(sd);
@@ -1093,7 +1093,7 @@ static int imx586_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx586_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct imx586 *imx586 = to_imx586(sd);
@@ -1141,23 +1141,8 @@ static int imx586_g_frame_interval(struct v4l2_subdev *sd,
 static int imx586_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct imx586 *imx586 = to_imx586(sd);
-	const struct imx586_mode *mode = imx586->cur_mode;
-	u32 val = 0;
-
-	if (mode->hdr_mode == NO_HDR)
-		val = 1 << (IMX586_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode == HDR_X2)
-		val = 1 << (IMX586_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK |
-		V4L2_MBUS_CSI2_CHANNEL_1;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = IMX586_LANES;
 
 	return 0;
 }
@@ -1206,7 +1191,7 @@ static void imx586_get_otp(struct otp_info *otp,
 		inf->pdaf.flag = 1;
 		inf->pdaf.gainmap_width = otp->pdaf_data.gainmap_width;
 		inf->pdaf.gainmap_height = otp->pdaf_data.gainmap_height;
-		//inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
+		inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
 		inf->pdaf.dcc_mode = otp->pdaf_data.dcc_mode;
 		inf->pdaf.dcc_dir = otp->pdaf_data.dcc_dir;
 		inf->pdaf.dccmap_width = otp->pdaf_data.dccmap_width;
@@ -1265,7 +1250,7 @@ static int imx586_get_channel_info(struct imx586 *imx586, struct rkmodule_channe
 		return -EINVAL;
 
 	if (ch_info->index == imx586->spd_id && mode->spd) {
-		ch_info->vc = V4L2_MBUS_CSI2_CHANNEL_0;
+		ch_info->vc = 0;
 		ch_info->width = mode->spd->width;
 		ch_info->height = mode->spd->height;
 		ch_info->bus_fmt = mode->spd->bus_fmt;
@@ -1707,7 +1692,7 @@ static int imx586_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx586 *imx586 = to_imx586(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct imx586_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&imx586->mutex);
@@ -1725,7 +1710,7 @@ static int imx586_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int imx586_enum_frame_interval(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct imx586 *imx586 = to_imx586(sd);
@@ -2165,7 +2150,7 @@ continue_probe:
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 imx586->module_index, facing,
 		 IMX586_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2191,7 +2176,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int imx586_remove(struct i2c_client *client)
+static void imx586_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx586 *imx586 = to_imx586(sd);
@@ -2207,8 +2192,6 @@ static int imx586_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__imx586_power_off(imx586);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

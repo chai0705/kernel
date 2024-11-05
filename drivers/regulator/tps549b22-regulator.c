@@ -388,11 +388,9 @@ err:
 	return ret;
 }
 
-static int tps549b22_i2c_remove(struct i2c_client *i2c)
+static void tps549b22_i2c_remove(struct i2c_client *i2c)
 {
 	i2c_set_clientdata(i2c, NULL);
-
-	return 0;
 }
 
 static const struct i2c_device_id tps549b22_i2c_id[] = {

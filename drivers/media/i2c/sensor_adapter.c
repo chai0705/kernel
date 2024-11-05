@@ -189,7 +189,7 @@ static int sensor_write_reg(struct i2c_client *client, u16 reg,
 }
 
 static int sensor_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -207,7 +207,7 @@ static int sensor_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sensor_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -225,7 +225,7 @@ static int sensor_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -238,7 +238,7 @@ static int sensor_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sensor_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index > 1)
@@ -282,14 +282,10 @@ static int sensor_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	struct sensor *sensor = to_sensor(sd);
-	u32 val = 0;
 	u32 lane_num = sensor->bus_config.bus.lanes;
 
-	val = 1 << (lane_num - 1) |
-	      V4L2_MBUS_CSI2_CHANNEL_0 |
-	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 	config->type = sensor->bus_config.bus.bus_type;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = lane_num;
 
 	return 0;
 }
@@ -1093,7 +1089,7 @@ static int sensor_runtime_suspend(struct device *dev)
 }
 
 static int sensor_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -1125,7 +1121,7 @@ static int sensor_get_selection(struct v4l2_subdev *sd,
 }
 
 static int sensor_set_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -1153,7 +1149,7 @@ static int sensor_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sensor *sensor = to_sensor(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sensor_mode *def_mode = sensor->cur_mode;
 
 	mutex_lock(&sensor->mutex);
@@ -1171,7 +1167,7 @@ static int sensor_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sensor_enum_frame_interval(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct sensor *sensor = to_sensor(sd);
@@ -1413,7 +1409,7 @@ static int sensor_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 sensor->module_index, facing,
 		 SENSOR_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1444,7 +1440,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sensor_remove(struct i2c_client *client)
+static void sensor_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sensor *sensor = to_sensor(sd);
@@ -1460,8 +1456,6 @@ static int sensor_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sensor_power_off(sensor);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

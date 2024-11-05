@@ -123,7 +123,6 @@ static GSENSOR_VECTOR3D gsensor_gain;
 static struct file *fd_file;
 static int load_cali_flg;
 static bool READ_FROM_BACKUP;
-static mm_segment_t oldfs;
 static unsigned char offset_buf[9];
 static signed int offset_data[3];
 static s16 G_RAW_DATA[3];
@@ -146,10 +145,6 @@ static int g_value;
 
 /* Addresses to scan -- protected by sense_data_mutex */
 static struct i2c_client *this_client;
-
-#ifdef CONFIG_HAS_EARLYSUSPEND
-static struct early_suspend mc3230_early_suspend;
-#endif
 
 /* status */
 #define MC3230_OPEN           1
@@ -184,9 +179,12 @@ static int mc3230_active(struct i2c_client *client, int enable);
 static void MC32X0_rbm(struct i2c_client *client, int enable);
 static int init_3230_ctl_data(struct i2c_client *client);
 
-struct file *openFile(const char *path, int flag, int mode)
+static struct file *openFile(const char *path, int flag, int mode)
 {
 	struct file *fp;
+
+	if (!IS_ENABLED(CONFIG_NO_GKI))
+		return NULL;
 
 	fp = filp_open(path, flag, mode);
 	if (IS_ERR(fp) || !fp->f_op)
@@ -219,8 +217,6 @@ static int closeFile(struct file *fp)
 
 static void initKernelEnv(void)
 {
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
 }
 
 static struct mc3230_data g_mc3230_data = { 0 };
@@ -259,7 +255,6 @@ static int mcube_read_cali_file(struct i2c_client *client)
 		else
 			GSE_LOG("read file error %d\n", err);
 
-		set_fs(oldfs);
 		closeFile(fd_file);
 
 		sscanf(backup_buf, "%d %d %d", &cali_data[MC32X0_AXIS_X],
@@ -1043,7 +1038,6 @@ static void mcube_copy_file(const char *dstfilepath)
 	else
 		GSE_LOG("write file error %d\n", err);
 
-	set_fs(oldfs);
 	closeFile(fd_file);
 }
 
@@ -1324,9 +1318,9 @@ static int gsensor_mc3230_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_ops);
 }
 
-static int gsensor_mc3230_remove(struct i2c_client *client)
+static void gsensor_mc3230_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_ops);
+	sensor_unregister_device(client, NULL, &gsensor_ops);
 }
 
 static const struct i2c_device_id gsensor_mc3230_id[] = {
@@ -1336,7 +1330,7 @@ static const struct i2c_device_id gsensor_mc3230_id[] = {
 
 static struct i2c_driver gsensor_mc3230_driver = {
 	.probe = gsensor_mc3230_probe,
-	.remove = gsensor_mc3230_remove,
+	.remove = (void *)gsensor_mc3230_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gsensor_mc3230_id,
 	.driver = {

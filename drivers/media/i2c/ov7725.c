@@ -214,7 +214,7 @@ ov7725_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int ov7725_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov7725 *ov7725 = to_ov7725(sd);
@@ -230,7 +230,7 @@ static int ov7725_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.colorspace = V4L2_COLORSPACE_JPEG;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov7725->mutex);
 		return -ENOTTY;
@@ -245,7 +245,7 @@ static int ov7725_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov7725_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct ov7725 *ov7725 = to_ov7725(sd);
@@ -254,7 +254,7 @@ static int ov7725_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov7725->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov7725->mutex);
 		return -ENOTTY;
@@ -272,7 +272,7 @@ static int ov7725_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov7725_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(supported_modes))
@@ -284,7 +284,7 @@ static int ov7725_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov7725_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	u32 index = fse->index;
@@ -389,7 +389,7 @@ static int ov7725_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov7725 *ov7725 = to_ov7725(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-		v4l2_subdev_get_try_format(sd, fh->pad, 0);
+		v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov7725_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ov7725->mutex);
@@ -572,7 +572,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov7725_remove(struct i2c_client *client)
+static void ov7725_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov7725 *ov7725 = to_ov7725(sd);
@@ -587,8 +587,6 @@ static int ov7725_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov7725_power_off(ov7725);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

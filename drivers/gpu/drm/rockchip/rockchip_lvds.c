@@ -340,7 +340,8 @@ rockchip_lvds_encoder_atomic_check(struct drm_encoder *encoder,
 	s->bus_flags = info->bus_flags;
 	s->tv_state = &conn_state->tv;
 	s->eotf = HDMI_EOTF_TRADITIONAL_GAMMA_SDR;
-	s->color_space = V4L2_COLORSPACE_DEFAULT;
+	s->color_encoding = DRM_COLOR_YCBCR_BT709;
+	s->color_range = DRM_COLOR_YCBCR_FULL_RANGE;
 
 	switch (lvds->pixel_order) {
 	case ROCKCHIP_LVDS_DUAL_LINK_ODD_EVEN_PIXELS:
@@ -488,169 +489,6 @@ static struct rockchip_lvds *rockchip_lvds_find_by_id(struct device_driver *drv,
 	return dev_get_drvdata(dev);
 }
 
-static int rockchip_lvds_bind(struct device *dev, struct device *master,
-			      void *data)
-{
-	struct rockchip_lvds *lvds = dev_get_drvdata(dev);
-	struct drm_device *drm_dev = data;
-	struct drm_encoder *encoder = &lvds->encoder;
-	struct drm_connector *connector = &lvds->connector;
-	int ret;
-
-	/*
-	 * dual channel lvds mode only need to register one connector.
-	 */
-	if (lvds->primary)
-		return 0;
-
-	ret = drm_of_find_panel_or_bridge(dev->of_node, 1, -1,
-					  &lvds->panel, &lvds->bridge);
-	if (ret)
-		return ret;
-
-	encoder->possible_crtcs = rockchip_drm_of_find_possible_crtcs(drm_dev,
-								      dev->of_node);
-
-	ret = drm_encoder_init(drm_dev, encoder, &rockchip_lvds_encoder_funcs,
-			       DRM_MODE_ENCODER_LVDS, NULL);
-	if (ret < 0) {
-		DRM_DEV_ERROR(lvds->dev,
-			      "failed to initialize encoder: %d\n", ret);
-		return ret;
-	}
-
-	drm_encoder_helper_add(encoder, &rockchip_lvds_encoder_helper_funcs);
-
-	if (lvds->panel) {
-		struct rockchip_drm_private *private = drm_dev->dev_private;
-
-		ret = drm_connector_init(drm_dev, connector,
-					 &rockchip_lvds_connector_funcs,
-					 DRM_MODE_CONNECTOR_LVDS);
-		if (ret < 0) {
-			DRM_DEV_ERROR(drm_dev->dev,
-				      "failed to initialize connector: %d\n", ret);
-			goto err_free_encoder;
-		}
-
-		if (lvds->secondary) {
-			kfree(connector->name);
-			connector->name = kasprintf(GFP_KERNEL, "LVDS-DUAL");
-			if (!connector->name) {
-				ret = -ENOMEM;
-				goto err_free_connector;
-			}
-		}
-
-		drm_connector_helper_add(connector,
-					 &rockchip_lvds_connector_helper_funcs);
-
-		ret = drm_connector_attach_encoder(connector, encoder);
-		if (ret < 0) {
-			DRM_DEV_ERROR(lvds->dev,
-				      "failed to attach encoder: %d\n", ret);
-			goto err_free_connector;
-		}
-
-		lvds->sub_dev.connector = &lvds->connector;
-		lvds->sub_dev.of_node = lvds->dev->of_node;
-		lvds->sub_dev.loader_protect = rockchip_lvds_encoder_loader_protect;
-		rockchip_drm_register_sub_dev(&lvds->sub_dev);
-		drm_object_attach_property(&connector->base, private->connector_id_prop, 0);
-	} else {
-		ret = drm_bridge_attach(encoder, lvds->bridge, NULL, 0);
-		if (ret) {
-			DRM_DEV_ERROR(lvds->dev,
-				      "failed to attach bridge: %d\n", ret);
-			goto err_free_encoder;
-		}
-	}
-
-	return 0;
-
-err_free_connector:
-	drm_connector_cleanup(connector);
-err_free_encoder:
-	drm_encoder_cleanup(encoder);
-	return ret;
-}
-
-static void rockchip_lvds_unbind(struct device *dev, struct device *master,
-				void *data)
-{
-	struct rockchip_lvds *lvds = dev_get_drvdata(dev);
-
-	if (lvds->sub_dev.connector)
-		rockchip_drm_unregister_sub_dev(&lvds->sub_dev);
-	if (lvds->panel)
-		drm_connector_cleanup(&lvds->connector);
-
-	if (lvds->encoder.dev)
-		drm_encoder_cleanup(&lvds->encoder);
-}
-
-static const struct component_ops rockchip_lvds_component_ops = {
-	.bind = rockchip_lvds_bind,
-	.unbind = rockchip_lvds_unbind,
-};
-
-static int rockchip_lvds_probe(struct platform_device *pdev)
-{
-	struct device *dev = &pdev->dev;
-	struct rockchip_lvds *lvds;
-	int ret;
-
-	if (!dev->of_node)
-		return -ENODEV;
-
-	lvds = devm_kzalloc(dev, sizeof(*lvds), GFP_KERNEL);
-	if (!lvds)
-		return -ENOMEM;
-
-	lvds->id = of_alias_get_id(dev->of_node, "lvds");
-	if (lvds->id < 0)
-		lvds->id = 0;
-
-	lvds->dev = dev;
-	lvds->funcs = of_device_get_match_data(dev);
-	platform_set_drvdata(pdev, lvds);
-
-	lvds->dual_channel = of_property_read_bool(dev->of_node,
-						   "dual-channel");
-	lvds->data_swap = of_property_read_bool(dev->of_node,
-						"rockchip,data-swap");
-
-	lvds->phy = devm_phy_get(dev, "phy");
-	if (IS_ERR(lvds->phy)) {
-		ret = PTR_ERR(lvds->phy);
-		DRM_DEV_ERROR(dev, "failed to get phy: %d\n", ret);
-		return ret;
-	}
-
-	lvds->grf = syscon_node_to_regmap(dev->parent->of_node);
-	if (IS_ERR(lvds->grf)) {
-		ret = PTR_ERR(lvds->grf);
-		DRM_DEV_ERROR(dev, "Unable to get grf: %d\n", ret);
-		return ret;
-	}
-
-	lvds->pixel_order = -1;
-	if (lvds->funcs->probe) {
-		ret = lvds->funcs->probe(lvds);
-		if (ret)
-			return ret;
-	}
-
-	return component_add(dev, &rockchip_lvds_component_ops);
-}
-
-static int rockchip_lvds_remove(struct platform_device *pdev)
-{
-	component_del(&pdev->dev, &rockchip_lvds_component_ops);
-
-	return 0;
-}
-
 static void px30_lvds_enable(struct rockchip_lvds *lvds)
 {
 	int pipe = drm_of_encoder_active_endpoint_id(lvds->dev->of_node,
@@ -707,7 +545,7 @@ static void rk3288_lvds_enable(struct rockchip_lvds *lvds)
 	      RK3288_LVDS_CON_SELECT(lvds->format);
 
 	if (lvds->dual_channel) {
-		u32 h_bp = mode->htotal - mode->hsync_start;
+		u32 h_bp = mode->crtc_htotal - mode->crtc_hsync_start;
 
 		val |= RK3288_LVDS_CON_ENABLE_2(1) |
 		       RK3288_LVDS_CON_ENABLE_1(1) |
@@ -848,6 +686,180 @@ static const struct of_device_id rockchip_lvds_dt_ids[] = {
 	{}
 };
 MODULE_DEVICE_TABLE(of, rockchip_lvds_dt_ids);
+
+static int rockchip_lvds_bind(struct device *dev, struct device *master,
+			      void *data)
+{
+	struct rockchip_lvds *lvds = dev_get_drvdata(dev);
+	struct drm_device *drm_dev = data;
+	struct drm_encoder *encoder = &lvds->encoder;
+	struct drm_connector *connector = NULL;
+	struct rockchip_drm_private *private = drm_dev->dev_private;
+	int ret;
+
+	/*
+	 * dual channel lvds mode only need to register one connector.
+	 */
+	if (lvds->primary)
+		return 0;
+
+	ret = drm_of_find_panel_or_bridge(dev->of_node, 1, -1,
+					  &lvds->panel, &lvds->bridge);
+	if (ret)
+		return ret;
+
+	encoder->possible_crtcs = rockchip_drm_of_find_possible_crtcs(drm_dev,
+								      dev->of_node);
+
+	ret = drm_encoder_init(drm_dev, encoder, &rockchip_lvds_encoder_funcs,
+			       DRM_MODE_ENCODER_LVDS, NULL);
+	if (ret < 0) {
+		DRM_DEV_ERROR(lvds->dev,
+			      "failed to initialize encoder: %d\n", ret);
+		return ret;
+	}
+
+	drm_encoder_helper_add(encoder, &rockchip_lvds_encoder_helper_funcs);
+
+	if (lvds->panel) {
+		connector = &lvds->connector;
+		ret = drm_connector_init(drm_dev, connector,
+					 &rockchip_lvds_connector_funcs,
+					 DRM_MODE_CONNECTOR_LVDS);
+		if (ret < 0) {
+			DRM_DEV_ERROR(drm_dev->dev,
+				      "failed to initialize connector: %d\n", ret);
+			goto err_free_encoder;
+		}
+
+		if (lvds->secondary) {
+			kfree(connector->name);
+			connector->name = kasprintf(GFP_KERNEL, "LVDS-DUAL");
+			if (!connector->name) {
+				ret = -ENOMEM;
+				goto err_free_connector;
+			}
+		}
+
+		drm_connector_helper_add(connector,
+					 &rockchip_lvds_connector_helper_funcs);
+
+		ret = drm_connector_attach_encoder(connector, encoder);
+		if (ret < 0) {
+			DRM_DEV_ERROR(lvds->dev,
+				      "failed to attach encoder: %d\n", ret);
+			goto err_free_connector;
+		}
+	} else {
+		struct list_head *connector_list;
+
+		ret = drm_bridge_attach(encoder, lvds->bridge, NULL, 0);
+		if (ret) {
+			DRM_DEV_ERROR(lvds->dev,
+				      "failed to attach bridge: %d\n", ret);
+			goto err_free_encoder;
+		}
+		connector_list = &lvds->bridge->dev->mode_config.connector_list;
+
+		list_for_each_entry(connector, connector_list, head)
+			if (drm_connector_has_possible_encoder(connector, &lvds->encoder))
+				break;
+	}
+
+	if (connector) {
+		lvds->sub_dev.connector = connector;
+		lvds->sub_dev.of_node = lvds->dev->of_node;
+		lvds->sub_dev.loader_protect = rockchip_lvds_encoder_loader_protect;
+		drm_object_attach_property(&connector->base, private->connector_id_prop, lvds->id);
+		rockchip_drm_register_sub_dev(&lvds->sub_dev);
+	}
+
+	return 0;
+
+err_free_connector:
+	drm_connector_cleanup(connector);
+err_free_encoder:
+	drm_encoder_cleanup(encoder);
+	return ret;
+}
+
+static void rockchip_lvds_unbind(struct device *dev, struct device *master,
+				void *data)
+{
+	struct rockchip_lvds *lvds = dev_get_drvdata(dev);
+
+	if (lvds->sub_dev.connector)
+		rockchip_drm_unregister_sub_dev(&lvds->sub_dev);
+	if (lvds->panel)
+		drm_connector_cleanup(&lvds->connector);
+
+	if (lvds->encoder.dev)
+		drm_encoder_cleanup(&lvds->encoder);
+}
+
+static const struct component_ops rockchip_lvds_component_ops = {
+	.bind = rockchip_lvds_bind,
+	.unbind = rockchip_lvds_unbind,
+};
+
+static int rockchip_lvds_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct rockchip_lvds *lvds;
+	int ret;
+
+	if (!dev->of_node)
+		return -ENODEV;
+
+	lvds = devm_kzalloc(dev, sizeof(*lvds), GFP_KERNEL);
+	if (!lvds)
+		return -ENOMEM;
+
+	lvds->id = of_alias_get_id(dev->of_node, "lvds");
+	if (lvds->id < 0)
+		lvds->id = 0;
+
+	lvds->dev = dev;
+	lvds->funcs = of_device_get_match_data(dev);
+	platform_set_drvdata(pdev, lvds);
+
+	lvds->dual_channel =
+		of_property_read_bool(dev->of_node, "dual-channel") ||
+		of_property_read_bool(dev->of_node, "rockchip,dual-channel");
+
+	lvds->data_swap = of_property_read_bool(dev->of_node,
+						"rockchip,data-swap");
+
+	lvds->phy = devm_phy_get(dev, "phy");
+	if (IS_ERR(lvds->phy)) {
+		ret = PTR_ERR(lvds->phy);
+		DRM_DEV_ERROR(dev, "failed to get phy: %d\n", ret);
+		return ret;
+	}
+
+	lvds->grf = syscon_node_to_regmap(dev->parent->of_node);
+	if (IS_ERR(lvds->grf)) {
+		ret = PTR_ERR(lvds->grf);
+		DRM_DEV_ERROR(dev, "Unable to get grf: %d\n", ret);
+		return ret;
+	}
+
+	lvds->pixel_order = -1;
+	if (lvds->funcs->probe) {
+		ret = lvds->funcs->probe(lvds);
+		if (ret)
+			return ret;
+	}
+
+	return component_add(dev, &rockchip_lvds_component_ops);
+}
+
+static int rockchip_lvds_remove(struct platform_device *pdev)
+{
+	component_del(&pdev->dev, &rockchip_lvds_component_ops);
+
+	return 0;
+}
 
 struct platform_driver rockchip_lvds_driver = {
 	.probe = rockchip_lvds_probe,

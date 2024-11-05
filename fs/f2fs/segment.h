@@ -149,7 +149,7 @@ enum {
 };
 
 /*
- * In the victim_sel_policy->alloc_mode, there are two block allocation modes.
+ * In the victim_sel_policy->alloc_mode, there are three block allocation modes.
  * LFS writes data sequentially with cleaning operations.
  * SSR (Slack Space Recycle) reuses obsolete space without cleaning operations.
  * AT_SSR (Age Threshold based Slack Space Recycle) merges fragments into
@@ -162,7 +162,7 @@ enum {
 };
 
 /*
- * In the victim_sel_policy->gc_mode, there are two gc, aka cleaning, modes.
+ * In the victim_sel_policy->gc_mode, there are three gc, aka cleaning, modes.
  * GC_CB is based on cost-benefit algorithm.
  * GC_GREEDY is based on greedy algorithm.
  * GC_AT is based on age-threshold algorithm.
@@ -231,10 +231,10 @@ struct segment_allocation {
 
 #define MAX_SKIP_GC_COUNT			16
 
-struct inmem_pages {
+struct revoke_entry {
 	struct list_head list;
-	struct page *page;
 	block_t old_addr;		/* for revoking when fail to commit */
+	pgoff_t index;
 };
 
 struct sit_info {
@@ -324,6 +324,7 @@ struct curseg_info {
 	unsigned short next_blkoff;		/* next block offset to write */
 	unsigned int zone;			/* current zone number */
 	unsigned int next_segno;		/* preallocated segment */
+	int fragment_remained_chunk;		/* remained block size in a chunk for block fragmentation mode */
 	bool inited;				/* indicate inmem log is inited */
 };
 
@@ -607,31 +608,52 @@ static inline bool has_curseg_enough_space(struct f2fs_sb_info *sbi,
 	return true;
 }
 
-static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi,
-					int freed, int needed)
+/*
+ * calculate needed sections for dirty node/dentry
+ * and call has_curseg_enough_space
+ */
+static inline void __get_secs_required(struct f2fs_sb_info *sbi,
+		unsigned int *lower_p, unsigned int *upper_p, bool *curseg_p)
 {
 	unsigned int total_node_blocks = get_pages(sbi, F2FS_DIRTY_NODES) +
 					get_pages(sbi, F2FS_DIRTY_DENTS) +
 					get_pages(sbi, F2FS_DIRTY_IMETA);
 	unsigned int total_dent_blocks = get_pages(sbi, F2FS_DIRTY_DENTS);
-	unsigned int node_secs = total_node_blocks / BLKS_PER_SEC(sbi);
-	unsigned int dent_secs = total_dent_blocks / BLKS_PER_SEC(sbi);
-	unsigned int node_blocks = total_node_blocks % BLKS_PER_SEC(sbi);
-	unsigned int dent_blocks = total_dent_blocks % BLKS_PER_SEC(sbi);
-	unsigned int free, need_lower, need_upper;
+	unsigned int node_secs = total_node_blocks / CAP_BLKS_PER_SEC(sbi);
+	unsigned int dent_secs = total_dent_blocks / CAP_BLKS_PER_SEC(sbi);
+	unsigned int node_blocks = total_node_blocks % CAP_BLKS_PER_SEC(sbi);
+	unsigned int dent_blocks = total_dent_blocks % CAP_BLKS_PER_SEC(sbi);
+
+	if (lower_p)
+		*lower_p = node_secs + dent_secs;
+	if (upper_p)
+		*upper_p = node_secs + dent_secs +
+			(node_blocks ? 1 : 0) + (dent_blocks ? 1 : 0);
+	if (curseg_p)
+		*curseg_p = has_curseg_enough_space(sbi,
+				node_blocks, dent_blocks);
+}
+
+static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi,
+					int freed, int needed)
+{
+	unsigned int free_secs, lower_secs, upper_secs;
+	bool curseg_space;
 
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		return false;
 
-	free = free_sections(sbi) + freed;
-	need_lower = node_secs + dent_secs + reserved_sections(sbi) + needed;
-	need_upper = need_lower + (node_blocks ? 1 : 0) + (dent_blocks ? 1 : 0);
+	__get_secs_required(sbi, &lower_secs, &upper_secs, &curseg_space);
 
-	if (free > need_upper)
+	free_secs = free_sections(sbi) + freed;
+	lower_secs += needed + reserved_sections(sbi);
+	upper_secs += needed + reserved_sections(sbi);
+
+	if (free_secs > upper_secs)
 		return false;
-	else if (free <= need_lower)
+	else if (free_secs <= lower_secs)
 		return true;
-	return !has_curseg_enough_space(sbi, node_blocks, dent_blocks);
+	return !curseg_space;
 }
 
 static inline bool f2fs_is_checkpoint_ready(struct f2fs_sb_info *sbi)
@@ -755,6 +777,7 @@ static inline int check_block_count(struct f2fs_sb_info *sbi,
 		f2fs_err(sbi, "Mismatch valid blocks %d vs. %d",
 			 GET_SIT_VBLOCKS(raw_sit), valid_blocks);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_handle_error(sbi, ERROR_INCONSISTENT_SIT);
 		return -EFSCORRUPTED;
 	}
 
@@ -769,6 +792,7 @@ static inline int check_block_count(struct f2fs_sb_info *sbi,
 		f2fs_err(sbi, "Wrong valid blocks %d or segno %u",
 			 GET_SIT_VBLOCKS(raw_sit), segno);
 		set_sbi_flag(sbi, SBI_NEED_FSCK);
+		f2fs_handle_error(sbi, ERROR_INCONSISTENT_SIT);
 		return -EFSCORRUPTED;
 	}
 	return 0;
@@ -883,7 +907,7 @@ static inline int nr_pages_to_skip(struct f2fs_sb_info *sbi, int type)
 	else if (type == NODE)
 		return 8 * sbi->blocks_per_seg;
 	else if (type == META)
-		return 8 * BIO_MAX_PAGES;
+		return 8 * BIO_MAX_VECS;
 	else
 		return 0;
 }
@@ -900,7 +924,7 @@ static inline long nr_pages_to_write(struct f2fs_sb_info *sbi, int type,
 		return 0;
 
 	nr_to_write = wbc->nr_to_write;
-	desired = BIO_MAX_PAGES;
+	desired = BIO_MAX_VECS;
 	if (type == NODE)
 		desired <<= 1;
 

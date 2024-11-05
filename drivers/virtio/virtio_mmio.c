@@ -127,7 +127,7 @@ static int vm_finalize_features(struct virtio_device *vdev)
 	/* Give virtio_ring a chance to accept features. */
 	vring_transport_features(vdev);
 
-	/* Make sure there is are no mixed devices */
+	/* Make sure there are no mixed devices */
 	if (vm_dev->version == 2 &&
 			!__virtio_test_bit(vdev, VIRTIO_F_VERSION_1)) {
 		dev_err(&vdev->dev, "New virtio-mmio devices (version 2) must provide VIRTIO_F_VERSION_1 feature!\n");
@@ -145,8 +145,8 @@ static int vm_finalize_features(struct virtio_device *vdev)
 	return 0;
 }
 
-static void vm_get(struct virtio_device *vdev, unsigned offset,
-		   void *buf, unsigned len)
+static void vm_get(struct virtio_device *vdev, unsigned int offset,
+		   void *buf, unsigned int len)
 {
 	struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
 	void __iomem *base = vm_dev->base + VIRTIO_MMIO_CONFIG;
@@ -187,8 +187,8 @@ static void vm_get(struct virtio_device *vdev, unsigned offset,
 	}
 }
 
-static void vm_set(struct virtio_device *vdev, unsigned offset,
-		   const void *buf, unsigned len)
+static void vm_set(struct virtio_device *vdev, unsigned int offset,
+		   const void *buf, unsigned int len)
 {
 	struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
 	void __iomem *base = vm_dev->base + VIRTIO_MMIO_CONFIG;
@@ -254,6 +254,11 @@ static void vm_set_status(struct virtio_device *vdev, u8 status)
 	/* We should never be setting status to 0. */
 	BUG_ON(status == 0);
 
+	/*
+	 * Per memory-barriers.txt, wmb() is not needed to guarantee
+	 * that the cache coherent memory writes have completed
+	 * before writing to the MMIO region.
+	 */
 	writel(status, vm_dev->base + VIRTIO_MMIO_STATUS);
 }
 
@@ -346,7 +351,14 @@ static void vm_del_vqs(struct virtio_device *vdev)
 	free_irq(platform_get_irq(vm_dev->pdev, 0), vm_dev);
 }
 
-static struct virtqueue *vm_setup_vq(struct virtio_device *vdev, unsigned index,
+static void vm_synchronize_cbs(struct virtio_device *vdev)
+{
+	struct virtio_mmio_device *vm_dev = to_virtio_mmio_device(vdev);
+
+	synchronize_irq(platform_get_irq(vm_dev->pdev, 0));
+}
+
+static struct virtqueue *vm_setup_vq(struct virtio_device *vdev, unsigned int index,
 				  void (*callback)(struct virtqueue *vq),
 				  const char *name, bool ctx)
 {
@@ -390,6 +402,8 @@ static struct virtqueue *vm_setup_vq(struct virtio_device *vdev, unsigned index,
 		err = -ENOMEM;
 		goto error_new_virtqueue;
 	}
+
+	vq->num_max = num;
 
 	/* Activate the queue */
 	writel(virtqueue_get_vring_size(vq), vm_dev->base + VIRTIO_MMIO_QUEUE_NUM);
@@ -456,7 +470,7 @@ error_available:
 	return ERR_PTR(err);
 }
 
-static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
+static int vm_find_vqs(struct virtio_device *vdev, unsigned int nvqs,
 		       struct virtqueue *vqs[],
 		       vq_callback_t *callbacks[],
 		       const char * const names[],
@@ -474,6 +488,9 @@ static int vm_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 			dev_name(&vdev->dev), vm_dev);
 	if (err)
 		return err;
+
+	if (of_property_read_bool(vm_dev->pdev->dev.of_node, "wakeup-source"))
+		enable_irq_wake(irq);
 
 	for (i = 0; i < nvqs; ++i) {
 		if (!names[i]) {
@@ -542,6 +559,7 @@ static const struct virtio_config_ops virtio_mmio_config_ops = {
 	.finalize_features = vm_finalize_features,
 	.bus_name	= vm_bus_name,
 	.get_shm_region = vm_get_shm_region,
+	.synchronize_cbs = vm_synchronize_cbs,
 };
 
 #ifdef CONFIG_PM_SLEEP
@@ -596,14 +614,17 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 	spin_lock_init(&vm_dev->lock);
 
 	vm_dev->base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(vm_dev->base))
-		return PTR_ERR(vm_dev->base);
+	if (IS_ERR(vm_dev->base)) {
+		rc = PTR_ERR(vm_dev->base);
+		goto free_vm_dev;
+	}
 
 	/* Check magic value */
 	magic = readl(vm_dev->base + VIRTIO_MMIO_MAGIC_VALUE);
 	if (magic != ('v' | 'i' << 8 | 'r' << 16 | 't' << 24)) {
 		dev_warn(&pdev->dev, "Wrong magic value 0x%08lx!\n", magic);
-		return -ENODEV;
+		rc = -ENODEV;
+		goto free_vm_dev;
 	}
 
 	/* Check device version */
@@ -611,7 +632,8 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 	if (vm_dev->version < 1 || vm_dev->version > 2) {
 		dev_err(&pdev->dev, "Version %ld not supported!\n",
 				vm_dev->version);
-		return -ENXIO;
+		rc = -ENXIO;
+		goto free_vm_dev;
 	}
 
 	vm_dev->vdev.id.device = readl(vm_dev->base + VIRTIO_MMIO_DEVICE_ID);
@@ -620,7 +642,8 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 		 * virtio-mmio device with an ID 0 is a (dummy) placeholder
 		 * with no function. End probing now with no error reported.
 		 */
-		return -ENODEV;
+		rc = -ENODEV;
+		goto free_vm_dev;
 	}
 	vm_dev->vdev.id.vendor = readl(vm_dev->base + VIRTIO_MMIO_VENDOR_ID);
 
@@ -649,6 +672,10 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 	if (rc)
 		put_device(&vm_dev->vdev.dev);
 
+	return rc;
+
+free_vm_dev:
+	kfree(vm_dev);
 	return rc;
 }
 
@@ -679,7 +706,7 @@ static int vm_cmdline_set(const char *device,
 	int err;
 	struct resource resources[2] = {};
 	char *str;
-	long long int base, size;
+	long long base, size;
 	unsigned int irq;
 	int processed, consumed = 0;
 	struct platform_device *pdev;

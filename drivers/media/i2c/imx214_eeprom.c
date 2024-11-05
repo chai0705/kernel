@@ -321,7 +321,7 @@ static int imx214_eeprom_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int imx214_eeprom_remove(struct i2c_client *client)
+static void imx214_eeprom_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx214_eeprom_device *imx214_eeprom_dev =
@@ -329,8 +329,6 @@ static int imx214_eeprom_remove(struct i2c_client *client)
 	kfree(imx214_eeprom_dev->otp);
 	pm_runtime_disable(&client->dev);
 	imx214_eeprom_subdev_cleanup(imx214_eeprom_dev);
-
-	return 0;
 }
 
 static int __maybe_unused imx214_eeprom_suspend(struct device *dev)

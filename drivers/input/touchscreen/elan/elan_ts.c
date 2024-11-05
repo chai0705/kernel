@@ -1463,11 +1463,12 @@ static long elan_iap_ioctl( struct file *filp, unsigned int cmd, unsigned long a
 	case IOCTL_I2C_INT:
 		put_user(gpio_get_value(ts->hw_info.intr_gpio), ip);
 		break;
-		case IOCTL_USER_HANDLE_IRQ:
-			ts->user_handle_irq = 1;
-			break;
-		case IOCTL_KERN_HANDLE_IRQ:
-			ts->user_handle_irq = 0;
+	case IOCTL_USER_HANDLE_IRQ:
+		ts->user_handle_irq = 1;
+		break;
+	case IOCTL_KERN_HANDLE_IRQ:
+		ts->user_handle_irq = 0;
+		break;
 	default:
 		break;
 	}
@@ -2062,7 +2063,7 @@ Output:
     Executive outcomes. 0---succeed.
 *******************************************************/
 
-static int elan_ts_remove(struct i2c_client *client)
+static void elan_ts_remove(struct i2c_client *client)
 {
 	struct elan_ts_data *ts = i2c_get_clientdata(client);
 
@@ -2088,7 +2089,6 @@ static int elan_ts_remove(struct i2c_client *client)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
 	i2c_set_clientdata(client,NULL);
-	return 0;
 }
 
 

@@ -33,7 +33,7 @@
 
 #define CY_I2C_DATA_SIZE  (2 * 256)
 
-static int cyttsp5_i2c_remove(struct i2c_client *client);
+static void cyttsp5_i2c_remove(struct i2c_client *client);
 
 static int cyttsp5_i2c_read_default(struct device *dev, void *buf, int size)
 {
@@ -184,7 +184,7 @@ static int cyttsp5_i2c_probe(struct i2c_client *client,
 	return rc;
 }
 
-static int cyttsp5_i2c_remove(struct i2c_client *client)
+static void cyttsp5_i2c_remove(struct i2c_client *client)
 {
 #ifdef CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP5_DEVICETREE_SUPPORT
 	struct device *dev = &client->dev;
@@ -199,8 +199,6 @@ static int cyttsp5_i2c_remove(struct i2c_client *client)
 	if (match)
 		cyttsp5_devtree_clean_pdata(dev);
 #endif
-
-	return 0;
 }
 
 static const struct i2c_device_id cyttsp5_i2c_id[] = {

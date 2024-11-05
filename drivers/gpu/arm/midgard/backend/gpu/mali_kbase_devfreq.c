@@ -341,7 +341,9 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	struct devfreq_dev_profile *dp;
 	struct dev_pm_opp *opp;
 	unsigned long opp_rate;
+	unsigned int dyn_power_coeff = 0;
 	int err;
+	struct device_node *model_dt_node;
 
 	if (!kbdev->clock) {
 		dev_err(kbdev->dev, "Clock not available for devfreq\n");
@@ -373,6 +375,20 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	of_property_read_u32(np, "downdifferential",
 			     &ondemand_data.downdifferential);
 
+	model_dt_node = of_get_compatible_child(np, "arm,mali-simple-power-model");
+	if (!model_dt_node) {
+		err = of_property_read_u32(np, "dynamic-power-coefficient",
+					   &dyn_power_coeff);
+		if (err) {
+			dev_err(kbdev->dev, "Couldn't find proper 'dynamic-power-coefficient' in DT\n");
+			goto devfreq_add_dev_failed;
+		} else {
+			dp->is_cooling_device = true;
+		}
+	} else {
+		of_node_put(model_dt_node);
+	}
+
 	kbdev->devfreq = devfreq_add_device(kbdev->dev, dp,
 				"simple_ondemand", &ondemand_data);
 	if (IS_ERR(kbdev->devfreq)) {
@@ -400,6 +416,7 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 	kbdev->devfreq->last_status.current_frequency = opp_rate;
 
 	mali_mdevp.data = kbdev->devfreq;
+	mali_mdevp.opp_info = &kbdev->opp_info;
 	kbdev->mdev_info = rockchip_system_monitor_register(kbdev->dev,
 							    &mali_mdevp);
 	if (IS_ERR(kbdev->mdev_info)) {
@@ -407,14 +424,16 @@ int kbase_devfreq_init(struct kbase_device *kbdev)
 		kbdev->mdev_info = NULL;
 	}
 #ifdef CONFIG_DEVFREQ_THERMAL
+	if (dp->is_cooling_device)
+		return 0;
+
 	err = kbase_ipa_init(kbdev);
 	if (err) {
 		dev_err(kbdev->dev, "IPA initialization failed\n");
 		goto cooling_failed;
 	}
 
-	kbdev->devfreq_cooling = of_devfreq_cooling_register_power(
-			kbdev->dev->of_node,
+	kbdev->devfreq_cooling = devfreq_cooling_em_register(
 			kbdev->devfreq,
 			&kbase_ipa_power_model_ops);
 	if (IS_ERR_OR_NULL(kbdev->devfreq_cooling)) {

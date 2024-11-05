@@ -11,10 +11,10 @@
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/gpio/consumer.h>
+#include <linux/usb/tcpci.h>
 #include <linux/usb/tcpm.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
-#include "tcpci.h"
 
 #define ET7303_VID		0x6DCF
 #define ET7303_PID		0x1711
@@ -289,12 +289,11 @@ static int et7303_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int et7303_remove(struct i2c_client *client)
+static void et7303_remove(struct i2c_client *client)
 {
 	struct et7303_chip *chip = i2c_get_clientdata(client);
 
 	tcpci_unregister_port(chip->tcpci);
-	return 0;
 }
 
 static const struct i2c_device_id et7303_id[] = {

@@ -1696,9 +1696,9 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
     return 0;
 }
 
-static int fts_ts_remove(struct i2c_client *client)
+static void fts_ts_remove(struct i2c_client *client)
 {
-    return fts_ts_remove_entry(i2c_get_clientdata(client));
+    fts_ts_remove_entry(i2c_get_clientdata(client));
 }
 
 static const struct i2c_device_id fts_ts_id[] = {

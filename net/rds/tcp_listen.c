@@ -133,7 +133,10 @@ int rds_tcp_accept_one(struct socket *sock)
 	__module_get(new_sock->ops->owner);
 
 	rds_tcp_keepalive(new_sock);
-	rds_tcp_tune(new_sock);
+	if (!rds_tcp_tune(new_sock)) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	inet = inet_sk(new_sock->sk);
 
@@ -301,7 +304,7 @@ struct socket *rds_tcp_listen_init(struct net *net, bool isv6)
 		addr_len = sizeof(*sin);
 	}
 
-	ret = sock->ops->bind(sock, (struct sockaddr *)&ss, addr_len);
+	ret = kernel_bind(sock, (struct sockaddr *)&ss, addr_len);
 	if (ret < 0) {
 		rdsdebug("could not bind %s listener socket: %d\n",
 			 isv6 ? "IPv6" : "IPv4", ret);

@@ -2,13 +2,13 @@
 /*
  * Alarmtimer interface
  *
- * This interface provides a timer which is similarto hrtimers,
+ * This interface provides a timer which is similar to hrtimers,
  * but triggers a RTC alarm if the box is suspend.
  *
  * This interface is influenced by the Android RTC Alarm timer
  * interface.
  *
- * Copyright (C) 2010 IBM Corperation
+ * Copyright (C) 2010 IBM Corporation
  *
  * Author: John Stultz <john.stultz@linaro.org>
  */
@@ -33,8 +33,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/alarmtimer.h>
 
-#undef CREATE_TRACE_POINTS
-#include <trace/hooks/wakeupbypass.h>
 /**
  * struct alarm_base - Alarm timer bases
  * @lock:		Lock for syncrhonized access to the base
@@ -94,7 +92,7 @@ static int alarmtimer_rtc_add_device(struct device *dev,
 	if (rtcdev)
 		return -EBUSY;
 
-	if (!rtc->ops->set_alarm)
+	if (!test_bit(RTC_FEATURE_ALARM, rtc->features))
 		return -1;
 	if (!device_may_wakeup(rtc->dev.parent))
 		return -1;
@@ -248,7 +246,6 @@ static int alarmtimer_suspend(struct device *dev)
 	struct rtc_device *rtc;
 	unsigned long flags;
 	struct rtc_time tm;
-	int wakeup_bypass_enabled = 0;
 
 	spin_lock_irqsave(&freezer_delta_lock, flags);
 	min = freezer_delta;
@@ -256,10 +253,6 @@ static int alarmtimer_suspend(struct device *dev)
 	type = freezer_alarmtype;
 	freezer_delta = 0;
 	spin_unlock_irqrestore(&freezer_delta_lock, flags);
-
-	trace_android_vh_wakeup_bypass(&wakeup_bypass_enabled);
-	if (wakeup_bypass_enabled)
-		return 0;
 
 	rtc = alarmtimer_get_rtcdev();
 	/* If we have no rtcdev, just return */
@@ -558,8 +551,11 @@ static enum alarmtimer_type clock2alarm(clockid_t clockid)
 /**
  * alarm_handle_timer - Callback for posix timers
  * @alarm: alarm that fired
+ * @now: time at the timer expiration
  *
  * Posix timer callback for expired alarm timers.
+ *
+ * Return: whether the timer is to be restarted
  */
 static enum alarmtimer_restart alarm_handle_timer(struct alarm *alarm,
 							ktime_t now)
@@ -747,8 +743,11 @@ static int alarm_timer_create(struct k_itimer *new_timer)
 /**
  * alarmtimer_nsleep_wakeup - Wakeup function for alarm_timer_nsleep
  * @alarm: ptr to alarm that fired
+ * @now: time at the timer expiration
  *
  * Wakes up the task that set the alarmtimer
+ *
+ * Return: ALARMTIMER_NORESTART
  */
 static enum alarmtimer_restart alarmtimer_nsleep_wakeup(struct alarm *alarm,
 								ktime_t now)
@@ -765,6 +764,7 @@ static enum alarmtimer_restart alarmtimer_nsleep_wakeup(struct alarm *alarm,
  * alarmtimer_do_nsleep - Internal alarmtimer nsleep implementation
  * @alarm: ptr to alarmtimer
  * @absexp: absolute expiration time
+ * @type: alarm type (BOOTTIME/REALTIME).
  *
  * Sets the alarm timer and sleeps until it is fired or interrupted.
  */
@@ -836,9 +836,8 @@ static long __sched alarm_timer_nsleep_restart(struct restart_block *restart)
 /**
  * alarm_timer_nsleep - alarmtimer nanosleep
  * @which_clock: clockid
- * @flags: determins abstime or relative
+ * @flags: determines abstime or relative
  * @tsreq: requested sleep time (abs or rel)
- * @rmtp: remaining sleep time saved
  *
  * Handles clock_nanosleep calls against _ALARM clockids
  */

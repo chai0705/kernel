@@ -26,13 +26,13 @@
 #include <drm/drm_mipi_dsi.h>
 
 #include <crypto/hash.h>
-#include <crypto/sha.h>
+#include <crypto/sha1.h>
 
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dp_helper.h>
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_edid.h>
 #include <drm/drm_print.h>
 #include <drm/drm_mipi_dsi.h>
@@ -1999,14 +1999,14 @@ static void hdmi_tx_set_capability_from_edid_parse(struct it6161 *it6161)
 	it6161->hdmi_mode = drm_detect_hdmi_monitor(it6161->edid);
 	it6161->support_audio = drm_detect_monitor_audio(it6161->edid);
 	if (it6161->hdmi_tx_output_color_space == F_MODE_YUV444) {
-		if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB444) != DRM_COLOR_FORMAT_YCRCB444) {
+		if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR444) != DRM_COLOR_FORMAT_YCBCR444) {
 			it6161->hdmi_tx_output_color_space &= ~F_MODE_CLRMOD_MASK;
 			it6161->hdmi_tx_output_color_space |= F_MODE_RGB444;
 		}
 	}
 
 	if (it6161->hdmi_tx_output_color_space == F_MODE_YUV422) {
-		if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB422) != DRM_COLOR_FORMAT_YCRCB422) {
+		if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR422) != DRM_COLOR_FORMAT_YCBCR422) {
 			it6161->hdmi_tx_output_color_space &= ~F_MODE_CLRMOD_MASK;
 			it6161->hdmi_tx_output_color_space |= F_MODE_RGB444;
 		}
@@ -2016,9 +2016,9 @@ static void hdmi_tx_set_capability_from_edid_parse(struct it6161 *it6161)
 
 	if ((info->color_formats & DRM_COLOR_FORMAT_RGB444) == DRM_COLOR_FORMAT_RGB444)
 		DRM_INFO("support RGB444 output");
-	if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB444) == DRM_COLOR_FORMAT_YCRCB444)
+	if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR444) == DRM_COLOR_FORMAT_YCBCR444)
 		DRM_INFO("support YUV444 output");
-	if ((info->color_formats & DRM_COLOR_FORMAT_YCRCB422) == DRM_COLOR_FORMAT_YCRCB422)
+	if ((info->color_formats & DRM_COLOR_FORMAT_YCBCR422) == DRM_COLOR_FORMAT_YCBCR422)
 		DRM_INFO("support YUV422 output");
 }
 
@@ -2134,7 +2134,7 @@ static int it6161_attach_dsi(struct it6161 *it6161)
     dsi->lanes = 4;
     dsi->format = MIPI_DSI_FMT_RGB888;
     dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE |
-              MIPI_DSI_MODE_EOT_PACKET | MIPI_DSI_MODE_VIDEO_HSE;
+              MIPI_DSI_MODE_NO_EOT_PACKET | MIPI_DSI_MODE_VIDEO_HSE;
 
     ret = mipi_dsi_attach(dsi);
     if (ret < 0) {
@@ -2182,8 +2182,6 @@ static int it6161_bridge_attach(struct drm_bridge *bridge,
 			      err);
 		goto cleanup_connector;
 	}
-
-    	DRM_INFO("%s, ret:%d", __func__, it6161_attach_dsi(it6161));
 
 	err = drm_connector_register(&it6161->connector);
 	if (err < 0) {
@@ -4030,7 +4028,7 @@ static void hdmi_tx_enable_hdcp(struct it6161 *it6161)
 }
 #endif
 
-static bool getHDMITX_LinkStatus()
+static bool getHDMITX_LinkStatus(void)
 {
 it6161_debug("%s reg0E:0x%02x reg0x61:0x%02x", __func__, it6161_hdmi_tx_read(it6161, REG_TX_SYS_STATUS), it6161_hdmi_tx_read(it6161, REG_TX_AFE_DRV_CTRL));//allen
     if(B_TX_RXSENDETECT & it6161_hdmi_tx_read(it6161, REG_TX_SYS_STATUS)) {
@@ -4669,7 +4667,7 @@ static void setHDMITX_HBRAudio(u8 bAudInterface /*I2S/SPDIF/TDM*/)
     // it6161_hdmi_tx_write(it6161, REG_TX_SW_RST, rst  );
 }
 
-static void setHDMITX_DSDAudio()
+static void setHDMITX_DSDAudio(void)
 {
     // to be continue
     // u8 rst;
@@ -6058,11 +6056,11 @@ static void it6161_mipi_rx_interrupt_reg06_process(struct it6161 *it6161, u8 reg
                 dmt_display_mode = drm_match_dmt_mode(&it6161->mipi_rx_p_display_mode);
 
                 if (dmt_display_mode)
-                    it6161->source_display_mode = *dmt_display_mode;
+                    drm_mode_copy(&it6161->source_display_mode, dmt_display_mode);
 
                 DRM_INFO("%sfind dmt timing", dmt_display_mode ? "" : "not ");
             } else {
-                it6161->source_display_mode = edid_cea_modes[it6161->vic];
+                drm_mode_copy(&it6161->source_display_mode, &edid_cea_modes[it6161->vic]);
             }
 #endif
 
@@ -6811,6 +6809,12 @@ static int it6161_i2c_probe(struct i2c_client *i2c_mipi_rx,
 	i2c_set_clientdata(i2c_mipi_rx, it6161);
 	it6161->bridge.funcs = &it6161_bridge_funcs;
 	drm_bridge_add(&it6161->bridge);
+
+	err = it6161_attach_dsi(it6161);
+	if (err) {
+		DRM_DEV_ERROR(dev, "failed to attach dsi, ret: %d", err);
+		goto err_cec;
+	}
 
 	return 0;
 

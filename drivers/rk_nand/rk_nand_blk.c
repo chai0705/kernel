@@ -71,7 +71,7 @@ static int rknand_proc_show(struct seq_file *m, void *v)
 
 static int rknand_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rknand_proc_show, PDE_DATA(inode));
+	return single_open(file, rknand_proc_show, pde_data(inode));
 }
 
 static const struct proc_ops rknand_proc_fops = {

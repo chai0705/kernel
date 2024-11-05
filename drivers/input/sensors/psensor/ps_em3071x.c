@@ -250,9 +250,9 @@ static int proximity_em3071x_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &psensor_em3071x_ops);
 }
 
-static int proximity_em3071x_remove(struct i2c_client *client)
+static void proximity_em3071x_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &psensor_em3071x_ops);
+	sensor_unregister_device(client, NULL, &psensor_em3071x_ops);
 }
 
 static const struct i2c_device_id proximity_em3071x_id[] = {
@@ -262,7 +262,7 @@ static const struct i2c_device_id proximity_em3071x_id[] = {
 
 static struct i2c_driver proximity_em3071x_driver = {
 	.probe = proximity_em3071x_probe,
-	.remove = proximity_em3071x_remove,
+	.remove = (void *)proximity_em3071x_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = proximity_em3071x_id,
 	.driver = {

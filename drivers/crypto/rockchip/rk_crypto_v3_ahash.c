@@ -21,11 +21,6 @@
 #define RK_POLL_PERIOD_US	100
 #define RK_POLL_TIMEOUT_US	50000
 
-struct rk_ahash_expt_ctx {
-	struct rk_ahash_ctx	ctx;
-	u8			lastc[RK_DMA_ALIGNMENT];
-};
-
 struct rk_hash_mid_data {
 	u32 valid_flag;
 	u32 hash_ctl;
@@ -41,6 +36,12 @@ static const u32 hash_algo2bc[] = {
 	[HASH_ALGO_SHA512] = CRYPTO_SHA512,
 	[HASH_ALGO_SM3]    = CRYPTO_SM3,
 };
+
+static inline bool is_check_hash_valid(struct rk_crypto_dev *dev)
+{
+	/* crypto < v4 need to check hash valid */
+	return CRYPTO_MAJOR_VER(CRYPTO_READ(dev, CRYPTO_CRYPTO_VERSION)) < CRYPTO_MAJOR_VER_4;
+}
 
 static void rk_hash_reset(struct rk_crypto_dev *rk_dev)
 {
@@ -261,7 +262,7 @@ static void clean_hash_setting(struct rk_crypto_dev *rk_dev)
 
 static int rk_ahash_import(struct ahash_request *req, const void *in)
 {
-	struct rk_ahash_expt_ctx state;
+	struct rk_ahash_ctx state;
 
 	/* 'in' may not be aligned so memcpy to local variable */
 	memcpy(&state, in, sizeof(state));
@@ -273,7 +274,7 @@ static int rk_ahash_import(struct ahash_request *req, const void *in)
 
 static int rk_ahash_export(struct ahash_request *req, void *out)
 {
-	struct rk_ahash_expt_ctx state;
+	struct rk_ahash_ctx state;
 
 	/* Don't let anything leak to 'out' */
 	memset(&state, 0, sizeof(state));
@@ -299,9 +300,9 @@ static int rk_ahash_dma_start(struct rk_crypto_dev *rk_dev, uint32_t flag)
 	CRYPTO_TRACE("ctx->calc_cnt = %u, count %u Byte, is_final = %d",
 		     ctx->calc_cnt, alg_ctx->count, is_final);
 
-	if (alg_ctx->count % RK_DMA_ALIGNMENT && !is_final) {
+	if (alg_ctx->count % rk_hash_reserve_block && !is_final) {
 		dev_err(rk_dev->dev, "count = %u is not aligned with [%u]\n",
-			alg_ctx->count, RK_DMA_ALIGNMENT);
+			alg_ctx->count, rk_hash_reserve_block);
 		return -EINVAL;
 	}
 
@@ -368,13 +369,15 @@ static int rk_ahash_get_result(struct rk_crypto_dev *rk_dev,
 
 	memset(ctx->priv, 0x00, sizeof(struct rk_hash_mid_data));
 
-	ret = read_poll_timeout_atomic(CRYPTO_READ, reg_ctrl,
-				       reg_ctrl & CRYPTO_HASH_IS_VALID,
-				       RK_POLL_PERIOD_US,
-				       RK_POLL_TIMEOUT_US, false,
-				       rk_dev, CRYPTO_HASH_VALID);
-	if (ret)
-		goto exit;
+	if (is_check_hash_valid(rk_dev)) {
+		ret = read_poll_timeout_atomic(CRYPTO_READ, reg_ctrl,
+					       reg_ctrl & CRYPTO_HASH_IS_VALID,
+					       RK_POLL_PERIOD_US,
+					       RK_POLL_TIMEOUT_US, false,
+					       rk_dev, CRYPTO_HASH_VALID);
+		if (ret)
+			goto exit;
+	}
 
 	rk_crypto_read_regs(rk_dev, CRYPTO_HASH_DOUT_0, data, data_len);
 
@@ -397,12 +400,14 @@ static int rk_cra_hash_init(struct crypto_tfm *tfm)
 
 	CRYPTO_TRACE();
 
+	rk_hash_reserve_block = 64;
+
 	memset(ctx, 0x00, sizeof(*ctx));
 
 	if (!rk_dev->request_crypto)
 		return -EFAULT;
 
-	alg_ctx->align_size     = RK_DMA_ALIGNMENT;
+	alg_ctx->align_size     = 64;
 
 	alg_ctx->ops.start      = rk_ahash_start;
 	alg_ctx->ops.update     = rk_ahash_crypto_rx;
@@ -433,7 +438,7 @@ static int rk_cra_hash_init(struct crypto_tfm *tfm)
 
 	crypto_ahash_set_reqsize(__crypto_ahash_cast(tfm), sizeof(struct rk_ahash_rctx));
 
-	algt->alg.hash.halg.statesize = sizeof(struct rk_ahash_expt_ctx);
+	algt->alg.hash.halg.statesize = sizeof(struct rk_ahash_ctx);
 
 	return 0;
 }

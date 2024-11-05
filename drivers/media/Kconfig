@@ -24,8 +24,7 @@ if MEDIA_SUPPORT
 
 config MEDIA_SUPPORT_FILTER
 	bool "Filter media drivers"
-	depends on MEDIA_SUPPORT
-	default y if !EMBEDDED && !EXPERT
+	default y if !EXPERT
 	help
 	   Configuring the media subsystem can be complex, as there are
 	   hundreds of drivers and other config options.
@@ -66,7 +65,8 @@ menu "Media device types"
 # Multimedia support - automatically enable V4L2 and DVB core
 #
 config MEDIA_CAMERA_SUPPORT
-	bool "Cameras and video grabbers"
+	bool
+	prompt "Cameras and video grabbers" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable support for webcams and video grabbers.
@@ -74,7 +74,8 @@ config MEDIA_CAMERA_SUPPORT
 	  Say Y when you have a webcam or a video capture grabber board.
 
 config MEDIA_ANALOG_TV_SUPPORT
-	bool "Analog TV"
+	bool
+	prompt "Analog TV" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable analog TV support.
@@ -87,7 +88,8 @@ config MEDIA_ANALOG_TV_SUPPORT
 		will disable support for them.
 
 config MEDIA_DIGITAL_TV_SUPPORT
-	tristate "Digital TV"
+	bool
+	prompt "Digital TV" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable digital TV support.
@@ -96,7 +98,8 @@ config MEDIA_DIGITAL_TV_SUPPORT
 	  hybrid digital TV and analog TV.
 
 config MEDIA_RADIO_SUPPORT
-	bool "AM/FM radio receivers/transmitters"
+	bool
+	prompt "AM/FM radio receivers/transmitters" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable AM/FM radio support.
@@ -111,7 +114,8 @@ config MEDIA_RADIO_SUPPORT
 		disable support for them.
 
 config MEDIA_SDR_SUPPORT
-	bool "Software defined radio"
+	bool
+	prompt "Software defined radio" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable software defined radio support.
@@ -119,7 +123,8 @@ config MEDIA_SDR_SUPPORT
 	  Say Y when you have a software defined radio device.
 
 config MEDIA_PLATFORM_SUPPORT
-	bool "Platform-specific devices"
+	bool
+	prompt "Platform-specific devices" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  Enable support for complex cameras, codecs, and other hardware
@@ -129,10 +134,11 @@ config MEDIA_PLATFORM_SUPPORT
 	  This is found on Embedded hardware (SoC), on V4L2 codecs and
 	  on some GPU and newer CPU chipsets.
 
-	  Say Y when you want to be able so see such devices.
+	  Say Y when you want to be able to see such devices.
 
 config MEDIA_TEST_SUPPORT
-	bool "Test drivers"
+	bool
+	prompt "Test drivers" if MEDIA_SUPPORT_FILTER
 	default y if !MEDIA_SUPPORT_FILTER
 	help
 	  These drivers should not be used on production kernels, but
@@ -154,6 +160,9 @@ menu "Media core support"
 config VIDEO_DEV
 	tristate "Video4Linux core"
 	default MEDIA_CAMERA_SUPPORT || MEDIA_ANALOG_TV_SUPPORT || MEDIA_RADIO_SUPPORT || MEDIA_SDR_SUPPORT || MEDIA_PLATFORM_SUPPORT || MEDIA_TEST_SUPPORT
+	depends on (I2C || I2C=n)
+	select RATIONAL
+	select VIDEOBUF2_V4L2 if VIDEOBUF2_CORE
 	help
 	  Enables the V4L2 API, used by cameras, analog TV, video grabbers,
 	  radio devices and by some input devices.
@@ -210,12 +219,11 @@ menu "Media drivers"
 comment "Drivers filtered as selected at 'Filter media drivers'"
 	depends on MEDIA_SUPPORT_FILTER
 
+comment "Media drivers"
+
 source "drivers/media/usb/Kconfig"
 source "drivers/media/pci/Kconfig"
 source "drivers/media/radio/Kconfig"
-
-# Common driver options
-source "drivers/media/common/Kconfig"
 
 if MEDIA_PLATFORM_SUPPORT
 source "drivers/media/platform/Kconfig"
@@ -227,6 +235,9 @@ source "drivers/media/test-drivers/Kconfig"
 endif
 
 source "drivers/media/firewire/Kconfig"
+
+# Common driver options
+source "drivers/media/common/Kconfig"
 
 endmenu
 

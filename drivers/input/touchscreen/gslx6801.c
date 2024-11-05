@@ -1607,7 +1607,7 @@ porbe_err_ret:
 	return rc;
 }
 
-static int gsl_ts_remove(struct i2c_client *client)
+static void gsl_ts_remove(struct i2c_client *client)
 {
 	struct gsl_ts *ts = i2c_get_clientdata(client);
 
@@ -1630,8 +1630,6 @@ static int gsl_ts_remove(struct i2c_client *client)
 	free_irq(ts->client->irq, ts);
 	destroy_workqueue(ts->wq);
 	gsl_ts_power_on(ts, false);
-
-	return 0;
 }
 
 static const struct of_device_id gsl_ts_ids[] = {

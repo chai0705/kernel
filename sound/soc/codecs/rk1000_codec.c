@@ -303,7 +303,7 @@ static struct snd_soc_dai_driver rk1000_codec_dai[] = {
 			.formats = RK1000_CODEC_FORMATS,
 		 },
 		.ops = &rk1000_codec_ops,
-		.symmetric_rates = 1,
+		.symmetric_rate = 1,
 	}
 };
 
@@ -544,13 +544,11 @@ static int rk1000_codec_i2c_probe(struct i2c_client *i2c,
 					       ARRAY_SIZE(rk1000_codec_dai));
 }
 
-static int rk1000_codec_i2c_remove(struct i2c_client *i2c)
+static void rk1000_codec_i2c_remove(struct i2c_client *i2c)
 {
 	struct rk1000_codec_priv *rk1000 = i2c_get_clientdata(i2c);
 
 	regmap_write(rk1000->ctlmap, CODEC_CON, CODEC_OFF);
-
-	return 0;
 }
 
 static const struct i2c_device_id rk1000_codec_i2c_id[] = {

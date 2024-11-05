@@ -128,7 +128,7 @@ static int crypto_show_all(struct seq_file *p, void *v)
 
 static int crypto_open(struct inode *inode, struct file *file)
 {
-	struct rk_crypto_dev *data = PDE_DATA(inode);
+	struct rk_crypto_dev *data = pde_data(inode);
 
 	return single_open(file, crypto_show_all, data);
 }

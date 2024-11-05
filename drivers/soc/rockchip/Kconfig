@@ -44,7 +44,7 @@ config ROCKCHIP_ARM64_ALIGN_FAULT_FIX
 
 config ROCKCHIP_CPUINFO
 	tristate "Rockchip cpuinfo support"
-	depends on (ROCKCHIP_EFUSE || ROCKCHIP_OTP) && (ARM64 || ARM)
+	depends on (NVMEM_ROCKCHIP_EFUSE || NVMEM_ROCKCHIP_OTP) && (ARM64 || ARM)
 	help
 	  Say y here to enable Rockchip cpuinfo support.
 	  Set system_serial_low/high from eFuse ID.
@@ -145,16 +145,24 @@ config ROCKCHIP_PERFORMANCE_LEVEL
 	  This can also be changed at runtime (via the level module parameter).
 
 config ROCKCHIP_PM_DOMAINS
-        tristate "Rockchip generic power domain"
-        depends on PM
-        select PM_GENERIC_DOMAINS
-        help
-          Say y here to enable power domain support.
-          In order to meet high performance and low power requirements, a power
-          management unit is designed or saving power when RK3288 in low power
-          mode. The RK3288 PMU is dedicated for managing the power of the whole chip.
+	tristate "Rockchip generic power domain"
+	depends on PM
+	select PM_GENERIC_DOMAINS
+	help
+	  Say y here to enable power domain support.
+	  In order to meet high performance and low power requirements, a power
+	  management unit is designed or saving power when RK3288 in low power
+	  mode. The RK3288 PMU is dedicated for managing the power of the whole chip.
 
-          If unsure, say N.
+	  If unsure, say N.
+
+config ROCKCHIP_DTPM
+	tristate "Rockchip DTPM hierarchy"
+	depends on DTPM && m
+	help
+	  Describe the hierarchy for the Dynamic Thermal Power Management tree
+	  on this platform. That will create all the power capping capable
+	  devices.
 
 config ROCKCHIP_PVTM
 	tristate "Rockchip PVTM support"
@@ -170,6 +178,12 @@ config ROCKCHIP_RAMDISK
 	  Saying Y here will allow you to use reserved RAM memory as a block
 	  device.
 
+config ROCKCHIP_LITE_ULTRA_SUSPEND
+	bool "Enable lite/ultra suspend"
+	depends on SUSPEND && NO_GKI
+	help
+	  Add mem_sleep_states options lite/ultra for RK ebook project
+
 config ROCKCHIP_SUSPEND_MODE
 	tristate "Rockchip suspend mode config"
 	help
@@ -179,6 +193,19 @@ config ROCKCHIP_SYSTEM_MONITOR
 	tristate "Rockchip system monitor support"
 	help
 	  Say y here to enable rockchip system monitor support.
+
+config HAS_EARLYSUSPEND
+	bool
+
+config ROCKCHIP_EARLYSUSPEND
+	bool "Rockchip early suspend"
+	select HAS_EARLYSUSPEND
+	depends on !EARLYSUSPEND
+	depends on !FB_NOTIFY
+	depends on ROCKCHIP_SYSTEM_MONITOR
+	help
+	  Call early suspend handlers when the user requested sleep state
+	  changes.
 
 config ROCKCHIP_VENDOR_STORAGE
 	tristate "Rockchip vendor storage support"
@@ -228,7 +255,7 @@ config ROCKCHIP_DEBUG
 config ROCKCHIP_MINI_KERNEL
 	bool "Rockchip Mini Kernel support"
 	select NO_GKI
-	default y if CPU_RV1106 || CPU_RV1126
+	default y if CPU_RV1103B || CPU_RV1106 || CPU_RV1126
 	help
 	  Say y here to enable Rockchip mini kernel support.
 	  This option make the kernel size smaller.
@@ -236,9 +263,24 @@ config ROCKCHIP_MINI_KERNEL
 config ROCKCHIP_THUNDER_BOOT
 	bool "Rockchip Thunder Boot support"
 	depends on NO_GKI
+	select ROCKCHIP_THUNDER_BOOT_DEFER_FREE_MEMBLOCK if SMP
 	help
 	  Say y here to enable Rockchip thunder boot support.
 	  This option make the kernel boot faster.
+
+config ROCKCHIP_THUNDER_BOOT_DEFER_FREE_MEMBLOCK
+	bool "Defer free large memblock to Buddy allocator"
+	depends on SMP
+	depends on NO_GKI
+	help
+	  The physical memory of a system is divided into several types, like
+	  memory reserved for device, for kernel pagetable, etc. The remaining
+	  area is for Buddy allocator. Normally, The memory for Buddy is consist
+	  of different size blocks, so, under meeting the memory request of kernel
+	  booting, we can defer free the large block size to Buddy which can be
+	  done later in work queue in parallel to other kernel threads, and the
+	  size of the large block can be defined in kernel command line
+	  by "defer_free_block_size" boot parameter.
 
 config ROCKCHIP_THUNDER_BOOT_MMC
 	bool "Rockchip Thunder Boot from MMC"
@@ -281,7 +323,7 @@ config RK_DMABUF_PROCFS
 	depends on PROC_FS
 	help
 	  Turns on this to create a procfs debug interface for dma-buf, support
-	  get information from db_list by get_each_dmabuf.
+	  get information from db_list by dma_buf_get_each.
 
 	  If unsure, say "N".
 

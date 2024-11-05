@@ -377,7 +377,7 @@ err0:
 	return ret;
 }
 
-static int it66353_remove(struct i2c_client *client)
+static void it66353_remove(struct i2c_client *client)
 {
 	cancel_delayed_work_sync(&it66353->work_i2c_poll);
 
@@ -386,8 +386,6 @@ static int it66353_remove(struct i2c_client *client)
 	misc_deregister(&it66353_miscdev);
 	mutex_destroy(&it66353->poll_lock);
 	mutex_destroy(&it66353->port_lock);
-
-	return 0;
 }
 
 static const struct of_device_id it66353_of_match[] = {

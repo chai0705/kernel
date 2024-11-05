@@ -60,6 +60,9 @@ static void da7219_aad_btn_det_work(struct work_struct *work)
 	bool micbias_up = false;
 	int retries = 0;
 
+	/* Disable ground switch */
+	snd_soc_component_update_bits(component, 0xFB, 0x01, 0x00);
+
 	/* Drive headphones/lineout */
 	snd_soc_component_update_bits(component, DA7219_HP_L_CTRL,
 			    DA7219_HP_L_AMP_OE_MASK,
@@ -115,7 +118,7 @@ static void da7219_aad_hptest_work(struct work_struct *work)
 
 	__le16 tonegen_freq_hptest;
 	u8 pll_srm_sts, pll_ctrl, gain_ramp_ctrl, accdet_cfg8;
-	int report = 0, ret = 0;
+	int report = 0, ret;
 
 	/* Lock DAPM, Kcontrols affected by this test and the PLL */
 	snd_soc_dapm_mutex_lock(dapm);
@@ -152,6 +155,9 @@ static void da7219_aad_hptest_work(struct work_struct *work)
 	} else {
 		tonegen_freq_hptest = cpu_to_le16(DA7219_AAD_HPTEST_RAMP_FREQ_INT_OSC);
 	}
+
+	/* Disable ground switch */
+	snd_soc_component_update_bits(component, 0xFB, 0x01, 0x00);
 
 	/* Ensure gain ramping at fastest rate */
 	gain_ramp_ctrl = snd_soc_component_read(component, DA7219_GAIN_RAMP_CTRL);
@@ -432,6 +438,10 @@ static irqreturn_t da7219_aad_irq_thread(int irq, void *data)
 			mask |= DA7219_AAD_REPORT_ALL_MASK;
 			da7219_aad->jack_inserted = false;
 
+			/* Cancel any pending work */
+			cancel_work_sync(&da7219_aad->btn_det_work);
+			cancel_work_sync(&da7219_aad->hptest_work);
+
 			/* Un-drive headphones/lineout */
 			snd_soc_component_update_bits(component, DA7219_HP_R_CTRL,
 					    DA7219_HP_R_AMP_OE_MASK, 0);
@@ -448,9 +458,8 @@ static irqreturn_t da7219_aad_irq_thread(int irq, void *data)
 			snd_soc_dapm_disable_pin(dapm, "Mic Bias");
 			snd_soc_dapm_sync(dapm);
 
-			/* Cancel any pending work */
-			cancel_work_sync(&da7219_aad->btn_det_work);
-			cancel_work_sync(&da7219_aad->hptest_work);
+			/* Enable ground switch */
+			snd_soc_component_update_bits(component, 0xFB, 0x01, 0x01);
 		}
 	}
 
@@ -654,7 +663,7 @@ static struct da7219_aad_pdata *da7219_aad_fw_to_pdata(struct device *dev)
 		aad_pdata->mic_det_thr =
 			da7219_aad_fw_mic_det_thr(dev, fw_val32);
 	else
-		aad_pdata->mic_det_thr = DA7219_AAD_MIC_DET_THR_500_OHMS;
+		aad_pdata->mic_det_thr = DA7219_AAD_MIC_DET_THR_200_OHMS;
 
 	if (fwnode_property_read_u32(aad_np, "dlg,jack-ins-deb", &fw_val32) >= 0)
 		aad_pdata->jack_ins_deb =
@@ -904,6 +913,9 @@ int da7219_aad_init(struct snd_soc_component *component)
 	/* Disable button detection */
 	snd_soc_component_update_bits(component, DA7219_ACCDET_CONFIG_1,
 			    DA7219_BUTTON_CONFIG_MASK, 0);
+
+	/* Enable ground switch */
+	snd_soc_component_update_bits(component, 0xFB, 0x01, 0x01);
 
 	INIT_WORK(&da7219_aad->btn_det_work, da7219_aad_btn_det_work);
 	INIT_WORK(&da7219_aad->hptest_work, da7219_aad_hptest_work);

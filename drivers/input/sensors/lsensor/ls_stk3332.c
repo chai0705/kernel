@@ -342,9 +342,9 @@ static int light_stk3332_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &light_stk3332_ops);
 }
 
-static int light_stk3332_remove(struct i2c_client *client)
+static void light_stk3332_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &light_stk3332_ops);
+	sensor_unregister_device(client, NULL, &light_stk3332_ops);
 }
 
 static const struct i2c_device_id light_stk3332_id[] = {
@@ -354,7 +354,7 @@ static const struct i2c_device_id light_stk3332_id[] = {
 
 static struct i2c_driver light_stk3332_driver = {
 	.probe = light_stk3332_probe,
-	.remove = light_stk3332_remove,
+	.remove = (void *)light_stk3332_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = light_stk3332_id,
 	.driver = {

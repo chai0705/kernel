@@ -1,16 +1,9 @@
-/*
- * Copyright (c) 2018 Rockchip Electronics Co. Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// rk817 ALSA SoC Audio driver
+//
+// Copyright (c) 2018, Fuzhou Rockchip Electronics Co., Ltd All rights reserved.
+
 
 #include <linux/clk.h>
 #include <linux/device.h>
@@ -238,16 +231,22 @@ static int rk817_codec_ctl_gpio(struct rk817_codec_priv *rk817,
 {
 	if ((gpio & CODEC_SET_SPK) &&
 	    rk817->spk_ctl_gpio) {
+		if (level && rk817->spk_mute_delay)
+			msleep(rk817->spk_mute_delay);
 		gpiod_set_value(rk817->spk_ctl_gpio, level);
 		DBG("%s set spk clt %d\n", __func__, level);
-		msleep(rk817->spk_mute_delay);
+		if (!level && rk817->spk_mute_delay)
+			msleep(rk817->spk_mute_delay);
 	}
 
 	if ((gpio & CODEC_SET_HP) &&
 	    rk817->hp_ctl_gpio) {
+		if (level && rk817->hp_mute_delay)
+			msleep(rk817->hp_mute_delay);
 		gpiod_set_value(rk817->hp_ctl_gpio, level);
 		DBG("%s set hp clt %d\n", __func__, level);
-		msleep(rk817->hp_mute_delay);
+		if (!level && rk817->hp_mute_delay)
+			msleep(rk817->hp_mute_delay);
 	}
 
 	return 0;
@@ -267,17 +266,88 @@ static int rk817_reset(struct snd_soc_component *component)
 	snd_soc_component_write(component, RK817_CODEC_APLL_CFG5, 0x00);
 	snd_soc_component_write(component, RK817_CODEC_DTOP_DIGEN_CLKE, 0x00);
 	if (rk817->chip_ver <= 0x4) {
-		DBG("%s (%d): SMIC TudorAG and previous versions\n",
+		DBG("%s (%d): 0x4 and previous versions\n",
 		    __func__, __LINE__);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x0c);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0x95);
 	} else {
-		DBG("%s (%d): SMIC TudorAG version later\n",
+		DBG("%s (%d): 0x4 version later\n",
 		    __func__, __LINE__);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x04);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0xa5);
 	}
 	snd_soc_component_write(component, RK817_CODEC_DTOP_DIGEN_CLKE, 0x00);
+
+	return 0;
+}
+
+static int rk817_restart_dac_digital_clk(struct snd_soc_component *component)
+{
+	snd_soc_component_update_bits(component, RK817_CODEC_ADAC_CFG1,
+				      PWD_DACBIAS_MASK, PWD_DACBIAS_DOWN);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      DAC_DIG_CLK_MASK, DAC_DIG_CLK_DIS);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      DAC_DIG_CLK_MASK, DAC_DIG_CLK_EN);
+	DBG("%s: %d - Playback DIG CLK OPS\n", __func__, __LINE__);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_ADAC_CFG1,
+				      PWD_DACBIAS_MASK, PWD_DACBIAS_ON);
+
+	return 0;
+}
+
+static int rk817_restart_dac_digital_clk_and_apll(struct snd_soc_component *component)
+{
+	snd_soc_component_update_bits(component, RK817_CODEC_ADAC_CFG1,
+				      PWD_DACBIAS_MASK, PWD_DACBIAS_DOWN);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      DAC_DIG_CLK_MASK, DAC_DIG_CLK_DIS);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      DAC_DIG_CLK_MASK, DAC_DIG_CLK_EN);
+	DBG("%s: %d - Playback DIG CLK OPS\n", __func__, __LINE__);
+	snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
+				      PLL_PW_DOWN, PLL_PW_DOWN);
+	usleep_range(50, 60);
+	snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
+				      PLL_PW_DOWN, PLL_PW_UP);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_ADAC_CFG1,
+				      PWD_DACBIAS_MASK, PWD_DACBIAS_ON);
+
+	return 0;
+}
+
+static int rk817_restart_adc_digital_clk(struct snd_soc_component *component)
+{
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      ADC_DIG_CLK_MASK, ADC_DIG_CLK_DIS);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      ADC_DIG_CLK_MASK, ADC_DIG_CLK_EN);
+	DBG("%s: %d - Capture DIG CLK OPS\n", __func__, __LINE__);
+
+	return 0;
+}
+
+static int rk817_restart_adc_digital_clk_and_apll(struct snd_soc_component *component)
+{
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      ADC_DIG_CLK_MASK, ADC_DIG_CLK_DIS);
+	usleep_range(500, 600);
+	snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
+				      ADC_DIG_CLK_MASK, ADC_DIG_CLK_EN);
+	DBG("%s: %d - Capture DIG CLK OPS\n", __func__, __LINE__);
+	snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
+				      PLL_PW_DOWN, PLL_PW_DOWN);
+	usleep_range(50, 60);
+	snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
+				      PLL_PW_DOWN, PLL_PW_UP);
+	usleep_range(500, 600);
 
 	return 0;
 }
@@ -380,22 +450,16 @@ static int rk817_codec_power_up(struct snd_soc_component *component, int type)
 
 		/* configure APLL CFG0/4 */
 		if (rk817->chip_ver <= 0x4) {
-			DBG("%s (%d): SMIC TudorAG and previous versions\n",
+			DBG("%s (%d): 0x4 and previous versions\n",
 			    __func__, __LINE__);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x0c);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0x95);
 		} else {
-			DBG("%s: SMIC TudorAG version later\n", __func__);
+			DBG("%s: 0x4 version later\n", __func__);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x04);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0xa5);
 		}
-
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      DAC_DIG_CLK_MASK, DAC_DIG_CLK_DIS);
-		usleep_range(2000, 2500);
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      DAC_DIG_CLK_MASK, DAC_DIG_CLK_EN);
-		DBG("%s: %d - Playback DIG CLK OPS\n", __func__, __LINE__);
+		rk817_restart_dac_digital_clk(component);
 	}
 
 	if (type & RK817_CODEC_CAPTURE) {
@@ -411,22 +475,17 @@ static int rk817_codec_power_up(struct snd_soc_component *component, int type)
 
 		/* configure APLL CFG0/4 */
 		if (rk817->chip_ver <= 0x4) {
-			DBG("%s (%d): SMIC TudorAG and previous versions\n",
+			DBG("%s (%d): 0x4 and previous versions\n",
 			    __func__, __LINE__);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x0c);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0x95);
 		} else {
-			DBG("%s: SMIC TudorAG version later\n", __func__);
+			DBG("%s: 0x4 version later\n", __func__);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x04);
 			snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0xa5);
 		}
 
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      ADC_DIG_CLK_MASK, ADC_DIG_CLK_DIS);
-		usleep_range(2000, 2500);
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      ADC_DIG_CLK_MASK, ADC_DIG_CLK_EN);
-		DBG("%s: %d - Capture DIG CLK OPS\n", __func__, __LINE__);
+		rk817_restart_adc_digital_clk(component);
 
 		if (rk817->mic_in_differential)
 			snd_soc_component_update_bits(component,
@@ -872,7 +931,7 @@ static int rk817_resume_path_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
 	struct rk817_codec_priv *rk817 = snd_soc_component_get_drvdata(component);
 
-	DBG("%s : resume_path %ld\n", __func__, rk817->resume_path);
+	DBG("%s : resume_path %d\n", __func__, rk817->resume_path);
 
 	ucontrol->value.integer.value[0] = rk817->resume_path;
 
@@ -948,24 +1007,18 @@ static int rk817_hw_params(struct snd_pcm_substream *substream,
 	unsigned int rate = params_rate(params);
 	unsigned char apll_cfg3_val;
 	unsigned char dtop_digen_sr_lmt0;
-	unsigned char dtop_digen_clke;
 
 	DBG("%s : sample rate = %dHz\n", __func__, rate);
 
 	if (rk817->chip_ver <= 0x4) {
-		DBG("%s: SMIC TudorAG and previous versions\n", __func__);
+		DBG("%s: 0x4 and previous versions\n", __func__);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x0c);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0x95);
 	} else {
-		DBG("%s: SMIC TudorAG version later\n", __func__);
+		DBG("%s: 0x4 version later\n", __func__);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG0, 0x04);
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG4, 0xa5);
 	}
-
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
-		dtop_digen_clke = DAC_DIG_CLK_EN;
-	else
-		dtop_digen_clke = ADC_DIG_CLK_EN;
 
 	switch (rate) {
 	case 8000:
@@ -998,19 +1051,12 @@ static int rk817_hw_params(struct snd_pcm_substream *substream,
 	 */
 	if (!((substream->stream == SNDRV_PCM_STREAM_CAPTURE) && rk817->pdmdata_out_enable)) {
 		snd_soc_component_write(component, RK817_CODEC_APLL_CFG3, apll_cfg3_val);
-		/* The 0x00 contains ADC_DIG_CLK_DIS and DAC_DIG_CLK_DIS */
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      dtop_digen_clke, 0x00);
 		snd_soc_component_update_bits(component, RK817_CODEC_DDAC_SR_LMT0,
 					      DACSRT_MASK, dtop_digen_sr_lmt0);
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      dtop_digen_clke, dtop_digen_clke);
-		snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
-					      PLL_PW_DOWN, PLL_PW_DOWN);
-		usleep_range(50, 60);
-		snd_soc_component_update_bits(component, RK817_CODEC_APLL_CFG5,
-					      PLL_PW_DOWN, PLL_PW_UP);
-		usleep_range(500, 600);
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			rk817_restart_dac_digital_clk_and_apll(component);
+		else
+			rk817_restart_adc_digital_clk_and_apll(component);
 	}
 
 	switch (params_format(params)) {
@@ -1048,14 +1094,7 @@ static int rk817_digital_mute_dac(struct snd_soc_dai *dai, int mute, int stream)
 		snd_soc_component_update_bits(component,
 					      RK817_CODEC_DDAC_MUTE_MIXCTL,
 					      DACMT_ENABLE, DACMT_ENABLE);
-		snd_soc_component_write(component, RK817_CODEC_ADAC_CFG1,
-					PWD_DACBIAS_DOWN | PWD_DACD_DOWN |
-					PWD_DACL_DOWN | PWD_DACR_DOWN);
-		/* Reset DAC DTOP_DIGEN_CLKE for playback stopped */
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      DAC_DIG_CLK_EN, DAC_DIG_CLK_DIS);
-		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
-					      DAC_DIG_CLK_EN, DAC_DIG_CLK_EN);
+		rk817_restart_dac_digital_clk(component);
 		snd_soc_component_update_bits(component, RK817_CODEC_DTOP_DIGEN_CLKE,
 					      I2SRX_EN_MASK, I2SRX_DIS);
 	} else {
@@ -1170,7 +1209,7 @@ static void rk817_codec_shutdown(struct snd_pcm_substream *substream,
 	}
 }
 
-static struct snd_soc_dai_ops rk817_dai_ops = {
+static const struct snd_soc_dai_ops rk817_dai_ops = {
 	.hw_params	= rk817_hw_params,
 	.set_fmt	= rk817_set_dai_fmt,
 	.set_sysclk	= rk817_set_dai_sysclk,
@@ -1303,7 +1342,6 @@ static const struct snd_soc_component_driver soc_codec_dev_rk817 = {
 	.idle_bias_on = 1,
 	.use_pmdown_time = 1,
 	.endianness = 1,
-	.non_legacy_dai_naming = 1
 };
 
 static int rk817_codec_parse_dt_property(struct device *dev,

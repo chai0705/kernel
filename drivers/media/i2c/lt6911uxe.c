@@ -13,6 +13,7 @@
  * V0.0X01.0X04
  *  1.fix some errors.
  *  2.add dphy timing reg.
+ * V0.0X01.0X05 add dual mipi mode support
  *
  */
 // #define DEBUG
@@ -40,7 +41,7 @@
 #include <media/v4l2-event.h>
 #include <media/v4l2-fwnode.h>
 
-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x04)
+#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x05)
 
 static int debug;
 module_param(debug, int, 0644);
@@ -160,7 +161,7 @@ static const s64 link_freq_menu_items[] = {
 #endif
 
 struct lt6911uxe {
-	struct v4l2_fwnode_bus_mipi_csi2 bus;
+	struct v4l2_mbus_config_mipi_csi2 bus;
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler hdl;
@@ -185,6 +186,8 @@ struct lt6911uxe {
 	const char *len_name;
 	const struct lt6911uxe_mode *cur_mode;
 	const struct lt6911uxe_mode *support_modes;
+	struct rkmodule_multi_dev_info multi_dev_info;
+	struct rkmodule_csi_dphy_param dphy_param;
 	u32 cfg_num;
 	struct v4l2_fwnode_endpoint bus_cfg;
 	bool nosignal;
@@ -196,6 +199,7 @@ struct lt6911uxe {
 	u32 module_index;
 	u32 audio_sampling_rate;
 	int lane_in_use;
+	bool dual_mipi_port;
 };
 
 static const struct v4l2_dv_timings_cap lt6911uxe_timings_cap = {
@@ -790,7 +794,6 @@ static int lt6911uxe_get_detected_timings(struct v4l2_subdev *sd,
 	u32 byte_clk, mipi_clk, mipi_data_rate;
 
 	memset(timings, 0, sizeof(struct v4l2_dv_timings));
-	lt6911uxe_i2c_enable(sd);
 
 	clk_h = i2c_rd8(sd, PCLK_H);
 	clk_m = i2c_rd8(sd, PCLK_M);
@@ -835,7 +838,6 @@ static int lt6911uxe_get_detected_timings(struct v4l2_subdev *sd,
 	vfp = (val_h << 8) | val_l;
 
 	vbp = vtotal - vact - vs - vfp;
-	lt6911uxe_i2c_disable(sd);
 
 	lt6911uxe->nosignal = false;
 	lt6911uxe->is_audio_present = true;
@@ -963,7 +965,6 @@ static inline void enable_stream(struct v4l2_subdev *sd, bool enable)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 
-	lt6911uxe_i2c_enable(sd);
 	if (enable) {
 		lt6911uxe_config_dphy_timing(sd);
 		usleep_range(5000, 6000);
@@ -971,7 +972,6 @@ static inline void enable_stream(struct v4l2_subdev *sd, bool enable)
 	} else {
 		i2c_wr8(&lt6911uxe->sd, STREAM_CTL, DISABLE_STREAM);
 	}
-	lt6911uxe_i2c_disable(sd);
 	msleep(20);
 
 	v4l2_dbg(2, debug, sd, "%s: %sable\n",
@@ -1094,12 +1094,6 @@ static int lt6911uxe_s_dv_timings(struct v4l2_subdev *sd,
 		return 0;
 	}
 
-	if (!v4l2_valid_dv_timings(timings,
-				&lt6911uxe_timings_cap, NULL, NULL)) {
-		v4l2_dbg(1, debug, sd, "%s: timings out of range\n", __func__);
-		return -ERANGE;
-	}
-
 	lt6911uxe->timings = *timings;
 
 	enable_stream(sd, false);
@@ -1163,15 +1157,9 @@ static int lt6911uxe_g_mbus_config(struct v4l2_subdev *sd,
 			unsigned int pad, struct v4l2_mbus_config *cfg)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
-	u32 lane_num = lt6911uxe->bus_cfg.bus.mipi_csi2.num_data_lanes;
-	u32 val = 0;
-
-	val = 1 << (lane_num - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 
 	cfg->type = lt6911uxe->bus_cfg.bus_type;
-	cfg->flags = val;
+	cfg->bus.mipi_csi2 = lt6911uxe->bus_cfg.bus.mipi_csi2;
 
 	return 0;
 }
@@ -1193,7 +1181,7 @@ static int lt6911uxe_s_stream(struct v4l2_subdev *sd, int on)
 }
 
 static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -1209,7 +1197,7 @@ static int lt6911uxe_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxe_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
@@ -1229,7 +1217,7 @@ static int lt6911uxe_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxe_enum_frame_interval(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
@@ -1289,7 +1277,7 @@ lt6911uxe_find_best_fit(struct lt6911uxe *lt6911uxe)
 }
 
 static int lt6911uxe_get_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
@@ -1323,7 +1311,7 @@ static int lt6911uxe_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int lt6911uxe_set_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
@@ -1331,7 +1319,7 @@ static int lt6911uxe_set_fmt(struct v4l2_subdev *sd,
 
 	/* is overwritten by get_fmt */
 	u32 code = format->format.code;
-	int ret = lt6911uxe_get_fmt(sd, cfg, format);
+	int ret = lt6911uxe_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -1385,6 +1373,7 @@ static long lt6911uxe_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 	long ret = 0;
 	struct rkmodule_csi_dphy_param *dphy_param;
+	struct rkmodule_capture_info  *capture_info;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -1405,6 +1394,17 @@ static long lt6911uxe_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		*dphy_param = rk3588_dcphy_param;
 		dev_dbg(&lt6911uxe->i2c_client->dev,
 			"sensor get dphy param\n");
+		break;
+	case RKMODULE_GET_CAPTURE_MODE:
+		capture_info = (struct rkmodule_capture_info *)arg;
+		if (lt6911uxe->dual_mipi_port) {
+			v4l2_dbg(1, debug, sd, "enable dual mipi mode\n");
+			capture_info->mode = RKMODULE_MULTI_DEV_COMBINE_ONE;
+			capture_info->multi_dev = lt6911uxe->multi_dev_info;
+		} else {
+			capture_info->mode = 0;
+			capture_info->multi_dev = lt6911uxe->multi_dev_info;
+		}
 		break;
 	default:
 		ret = -ENOIOCTLCMD;
@@ -1444,6 +1444,7 @@ static long lt6911uxe_compat_ioctl32(struct v4l2_subdev *sd,
 	long ret;
 	int *seq;
 	struct rkmodule_csi_dphy_param *dphy_param;
+	struct rkmodule_capture_info  *capture_info;
 
 	switch (cmd) {
 	case RKMODULE_GET_MODULE_INFO:
@@ -1505,6 +1506,21 @@ static long lt6911uxe_compat_ioctl32(struct v4l2_subdev *sd,
 		}
 		kfree(dphy_param);
 		break;
+	case RKMODULE_GET_CAPTURE_MODE:
+		capture_info = kzalloc(sizeof(*capture_info), GFP_KERNEL);
+		if (!capture_info) {
+			ret = -ENOMEM;
+			return ret;
+		}
+
+		ret = lt6911uxe_ioctl(sd, cmd, capture_info);
+		if (!ret) {
+			ret = copy_to_user(up, capture_info, sizeof(*capture_info));
+			if (ret)
+				ret = -EFAULT;
+		}
+		kfree(capture_info);
+		break;
 	default:
 		ret = -ENOIOCTLCMD;
 		break;
@@ -1519,7 +1535,7 @@ static int lt6911uxe_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct lt6911uxe_mode *def_mode = &lt6911uxe->support_modes[0];
 
 	mutex_lock(&lt6911uxe->confctl_mutex);
@@ -1773,6 +1789,39 @@ static int lt6911uxe_check_chip_id(struct lt6911uxe *lt6911uxe)
 	return ret;
 }
 
+static int lt6911uxe_get_multi_dev_info(struct lt6911uxe *lt6911uxe)
+{
+	struct device *dev = &lt6911uxe->i2c_client->dev;
+	struct device_node *node = dev->of_node;
+	struct device_node *multi_info_np;
+
+	lt6911uxe->dual_mipi_port = false;
+	multi_info_np = of_get_child_by_name(node, "multi-dev-info");
+	if (!multi_info_np) {
+		dev_info(dev, "failed to get multi dev info\n");
+		return -EINVAL;
+	}
+
+	of_property_read_u32(multi_info_np, "dev-idx-l",
+			&lt6911uxe->multi_dev_info.dev_idx[0]);
+	of_property_read_u32(multi_info_np, "dev-idx-r",
+			&lt6911uxe->multi_dev_info.dev_idx[1]);
+	of_property_read_u32(multi_info_np, "combine-idx",
+			&lt6911uxe->multi_dev_info.combine_idx[0]);
+	of_property_read_u32(multi_info_np, "pixel-offset",
+			&lt6911uxe->multi_dev_info.pixel_offset);
+	of_property_read_u32(multi_info_np, "dev-num",
+			&lt6911uxe->multi_dev_info.dev_num);
+
+	lt6911uxe->dual_mipi_port = true;
+	dev_info(dev,
+		"multi dev left: mipi%d, multi dev right: mipi%d, combile mipi%d, dev num: %d\n",
+		lt6911uxe->multi_dev_info.dev_idx[0], lt6911uxe->multi_dev_info.dev_idx[1],
+		lt6911uxe->multi_dev_info.combine_idx[0], lt6911uxe->multi_dev_info.dev_num);
+
+	return 0;
+}
+
 static int lt6911uxe_probe(struct i2c_client *client,
 			  const struct i2c_device_id *id)
 {
@@ -1805,6 +1854,11 @@ static int lt6911uxe_probe(struct i2c_client *client,
 
 	lt6911uxe->timings = default_timing;
 	lt6911uxe->cur_mode = &lt6911uxe->support_modes[0];
+
+	err = lt6911uxe_get_multi_dev_info(lt6911uxe);
+	if (err)
+		v4l2_info(sd, "get multi dev info failed, not use dual mipi mode\n");
+
 	err = lt6911uxe_check_chip_id(lt6911uxe);
 	if (err < 0)
 		return err;
@@ -1839,7 +1893,7 @@ static int lt6911uxe_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 lt6911uxe->module_index, facing,
 		 LT6911UXE_NAME, dev_name(sd->dev));
-	err = v4l2_async_register_subdev_sensor_common(sd);
+	err = v4l2_async_register_subdev_sensor(sd);
 	if (err < 0) {
 		v4l2_err(sd, "v4l2 register subdev failed! err:%d\n", err);
 		goto err_clean_entity;
@@ -1907,7 +1961,7 @@ err_free_hdl:
 	return err;
 }
 
-static int lt6911uxe_remove(struct i2c_client *client)
+static void lt6911uxe_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct lt6911uxe *lt6911uxe = to_lt6911uxe(sd);
@@ -1926,8 +1980,6 @@ static int lt6911uxe_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&lt6911uxe->hdl);
 	mutex_destroy(&lt6911uxe->confctl_mutex);
 	clk_disable_unprepare(lt6911uxe->xvclk);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

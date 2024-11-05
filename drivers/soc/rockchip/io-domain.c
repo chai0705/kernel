@@ -126,7 +126,7 @@ static int rk3568_iodomain_write(struct rockchip_iodomain_supply *supply, int uV
 		break;
 	default:
 		return -EINVAL;
-	};
+	}
 
 	return 0;
 }
@@ -619,6 +619,10 @@ static const struct of_device_id rockchip_iodomain_match[] = {
 #endif
 #ifdef CONFIG_CPU_RV1108
 	{
+		.compatible = "rockchip,rk3568-pmu-io-voltage-domain",
+		.data = &soc_data_rk3568_pmu
+	},
+	{
 		.compatible = "rockchip,rv1108-io-voltage-domain",
 		.data = &soc_data_rv1108
 	},
@@ -638,16 +642,6 @@ static const struct of_device_id rockchip_iodomain_match[] = {
 MODULE_DEVICE_TABLE(of, rockchip_iodomain_match);
 
 #ifndef MODULE
-static const char *rdev_get_name(struct regulator_dev *rdev)
-{
-	if (rdev->constraints && rdev->constraints->name)
-		return rdev->constraints->name;
-	else if (rdev->desc->name)
-		return rdev->desc->name;
-	else
-		return "";
-}
-
 static struct device_node *of_get_child_regulator(struct device_node *parent,
 						  const char *prop_name)
 {

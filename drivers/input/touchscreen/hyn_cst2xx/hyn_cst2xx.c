@@ -1891,7 +1891,7 @@ error_mutex_destroy:
 	return rc;
 }
 
-static int hyn_ts_remove(struct i2c_client *client)
+static void hyn_ts_remove(struct i2c_client *client)
 {
 	struct hyn_ts *ts = i2c_get_clientdata(client);
 	printk("==hyn_ts_remove=\n");
@@ -1912,7 +1912,6 @@ static int hyn_ts_remove(struct i2c_client *client)
 	//device_remove_file(&ts->input->dev, &dev_attr_debug_enable);
 
 	//kfree(ts->touch_data);
-	return 0;
 }
 
 #if 1

@@ -26,7 +26,6 @@ config RK_DMABUF_DEBUG_ADVANCED
 
 config DMABUF_PARTIAL
 	bool "Support for partial cache maintenance"
-	default y
 	help
 	  In order to improve performance, allow dma-buf clients to
 	  apply cache maintenance to only a subset of a dma-buf.
@@ -91,6 +90,15 @@ config DMABUF_MOVE_NOTIFY
 	  This is marked experimental because we don't yet have a consistent
 	  execution context and memory management between drivers.
 
+config DMABUF_DEBUG
+	bool "DMA-BUF debug checks"
+	depends on DMA_SHARED_BUFFER
+	default y if DMA_API_DEBUG
+	help
+	  This option enables additional checks for DMA-BUF importers and
+	  exporters. Specifically it validates that importers do not peek at the
+	  underlying struct page when they import a buffer.
+
 config DMABUF_SELFTESTS
 	tristate "Selftests for the dma-buf interfaces"
 	default n
@@ -106,7 +114,7 @@ menuconfig DMABUF_HEAPS
 	  between drivers.
 
 menuconfig DMABUF_SYSFS_STATS
-	bool "DMA-BUF sysfs statistics"
+	bool "DMA-BUF sysfs statistics (DEPRECATED)"
 	depends on DMA_SHARED_BUFFER
 	help
 	   Choose this option to enable DMA-BUF sysfs statistics
@@ -115,6 +123,10 @@ menuconfig DMABUF_SYSFS_STATS
 	   /sys/kernel/dmabuf/buffers/<inode_number> will contain
 	   statistics for the DMA-BUF with the unique inode number
 	   <inode_number>.
+
+	   This option is deprecated and should sooner or later be removed.
+	   Android is the only user of this and it turned out that this resulted
+	   in quite some performance problems.
 
 source "drivers/dma-buf/heaps/Kconfig"
 source "drivers/dma-buf/rk_heaps/Kconfig"

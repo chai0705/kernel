@@ -18,7 +18,6 @@
 #include <linux/klist.h>
 #include <linux/pm.h>
 #include <linux/device/bus.h>
-#include <linux/android_kabi.h>
 
 struct device;
 struct fwnode_handle;
@@ -76,11 +75,6 @@ struct class {
 	const struct dev_pm_ops *pm;
 
 	struct subsys_private *p;
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
-	ANDROID_KABI_RESERVE(3);
-	ANDROID_KABI_RESERVE(4);
 };
 
 struct class_dev_iter {
@@ -262,6 +256,20 @@ extern void class_destroy(struct class *cls);
 
 /* This is a #define to keep the compiler from merging different
  * instances of the __key variable */
+
+/**
+ * class_create - create a struct class structure
+ * @owner: pointer to the module that is to "own" this struct class
+ * @name: pointer to a string for the name of this class.
+ *
+ * This is used to create a struct class pointer that can then be used
+ * in calls to device_create().
+ *
+ * Returns &struct class pointer on success, or ERR_PTR() on error.
+ *
+ * Note, the pointer created here is to be destroyed when finished by
+ * making a call to class_destroy().
+ */
 #define class_create(owner, name)		\
 ({						\
 	static struct lock_class_key __key;	\

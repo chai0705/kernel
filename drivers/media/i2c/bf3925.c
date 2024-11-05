@@ -720,7 +720,7 @@ static void bf3925_set_streaming(struct bf3925 *bf3925, int on)
  */
 
 static int bf3925_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -736,7 +736,7 @@ static int bf3925_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int bf3925_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -762,7 +762,7 @@ static int bf3925_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int bf3925_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -774,7 +774,7 @@ static int bf3925_get_fmt(struct v4l2_subdev *sd,
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 		struct v4l2_mbus_framefmt *mf;
 
-		mf = v4l2_subdev_get_try_format(sd, cfg, 0);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, 0);
 		mutex_lock(&bf3925->lock);
 		fmt->format = *mf;
 		mutex_unlock(&bf3925->lock);
@@ -837,7 +837,7 @@ static void __bf3925_try_frame_size_fps(struct v4l2_mbus_framefmt *mf,
 }
 
 static int bf3925_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -866,7 +866,7 @@ static int bf3925_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 		*mf = fmt->format;
 #else
 		return -ENOTTY;
@@ -957,7 +957,7 @@ static int bf3925_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct v4l2_mbus_framefmt *format =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 
 	dev_dbg(&client->dev, "%s:\n", __func__);
 
@@ -967,11 +967,11 @@ static int bf3925_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 }
 #endif
 
-static int bf3925_g_mbus_config(struct v4l2_subdev *sd,
+static int bf3925_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 				struct v4l2_mbus_config *config)
 {
 	config->type = V4L2_MBUS_PARALLEL;
-	config->flags = V4L2_MBUS_HSYNC_ACTIVE_HIGH |
+	config->bus.parallel.flags = V4L2_MBUS_HSYNC_ACTIVE_HIGH |
 			V4L2_MBUS_VSYNC_ACTIVE_LOW |
 			V4L2_MBUS_PCLK_SAMPLE_RISING;
 
@@ -1152,7 +1152,7 @@ static int bf3925_power(struct v4l2_subdev *sd, int on)
 }
 
 static int bf3925_enum_frame_interval(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *sd_state,
 				      struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(bf3925_framesizes))
@@ -1180,7 +1180,6 @@ static const struct v4l2_subdev_core_ops bf3925_subdev_core_ops = {
 
 static const struct v4l2_subdev_video_ops bf3925_subdev_video_ops = {
 	.s_stream = bf3925_s_stream,
-	.g_mbus_config = bf3925_g_mbus_config,
 	.g_frame_interval = bf3925_g_frame_interval,
 	.s_frame_interval = bf3925_s_frame_interval,
 };
@@ -1191,6 +1190,7 @@ static const struct v4l2_subdev_pad_ops bf3925_subdev_pad_ops = {
 	.enum_frame_interval = bf3925_enum_frame_interval,
 	.get_fmt = bf3925_get_fmt,
 	.set_fmt = bf3925_set_fmt,
+	.get_mbus_config = bf3925_g_mbus_config,
 };
 
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
@@ -1449,7 +1449,7 @@ static int bf3925_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 bf3925->module_index, facing,
 		 DRIVER_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(&bf3925->sd);
+	ret = v4l2_async_register_subdev_sensor(&bf3925->sd);
 	if (ret)
 		goto error;
 
@@ -1467,7 +1467,7 @@ error:
 	return ret;
 }
 
-static int bf3925_remove(struct i2c_client *client)
+static void bf3925_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct bf3925 *bf3925 = to_bf3925(sd);
@@ -1480,8 +1480,6 @@ static int bf3925_remove(struct i2c_client *client)
 	mutex_destroy(&bf3925->lock);
 
 	__bf3925_power_off(bf3925);
-
-	return 0;
 }
 
 static const struct i2c_device_id bf3925_id[] = {

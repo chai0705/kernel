@@ -13,5 +13,3 @@ obj-$(CONFIG_HALL_DEVICE)			+= hall/
 
 obj-$(CONFIG_SENSOR_DEVICE)			+= sensor_dev.o
 sensor_dev-y = sensor-i2c.o sensor-dev.o
-obj-y                                   += ls_stk3x1x.o
-obj-y                                   += ps_stk3x1x.o

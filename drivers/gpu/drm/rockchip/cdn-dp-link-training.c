@@ -240,7 +240,7 @@ static int cdn_dp_link_training_clock_recovery(struct cdn_dp_device *dp)
 	voltage_tries = 1;
 	max_vswing_tries = 0;
 	for (;;) {
-		drm_dp_link_train_clock_recovery_delay(dp->dpcd);
+		drm_dp_link_train_clock_recovery_delay(&dp->aux, dp->dpcd);
 		if (drm_dp_dpcd_read_link_status(&dp->aux, link_status) !=
 		    DP_LINK_STATUS_SIZE) {
 			DRM_ERROR("failed to get link status\n");
@@ -302,7 +302,7 @@ static int cdn_dp_link_training_channel_equalization(struct cdn_dp_device *dp)
 	}
 
 	for (tries = 0; tries < 5; tries++) {
-		drm_dp_link_train_channel_eq_delay(dp->dpcd);
+		drm_dp_link_train_channel_eq_delay(&dp->aux, dp->dpcd);
 		if (drm_dp_dpcd_read_link_status(&dp->aux, link_status) !=
 		    DP_LINK_STATUS_SIZE) {
 			DRM_ERROR("failed to get link status\n");

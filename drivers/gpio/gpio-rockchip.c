@@ -17,6 +17,10 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
+#include <linux/of_device.h>
+#include <linux/of_irq.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/platform_device.h>
 #include <linux/property.h>
@@ -28,6 +32,7 @@
 #define GPIO_TYPE_V1		(0)           /* GPIO Version ID reserved */
 #define GPIO_TYPE_V2		(0x01000C2B)  /* GPIO Version ID 0x01000C2B */
 #define GPIO_TYPE_V2_1		(0x0101157C)  /* GPIO Version ID 0x0101157C */
+#define GPIO_TYPE_V2_2		(0x010219C8)  /* GPIO Version ID 0x010219C8 */
 
 #define GPIO_MAX_PINS	(32)
 
@@ -157,6 +162,11 @@ static int rockchip_gpio_set_direction(struct gpio_chip *chip,
 	struct rockchip_pin_bank *bank = gpiochip_get_data(chip);
 	unsigned long flags;
 	u32 data = input ? 0 : 1;
+
+	if (input)
+		pinctrl_gpio_direction_input(bank->pin_base + offset);
+	else
+		pinctrl_gpio_direction_output(bank->pin_base + offset);
 
 	raw_spin_lock_irqsave(&bank->slock, flags);
 	rockchip_gpio_writel_bit(bank, offset, data, bank->gpio_regs->port_ddr);
@@ -330,26 +340,15 @@ static void rockchip_irq_demux(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct rockchip_pin_bank *bank = irq_desc_get_handler_data(desc);
-	u32 pend;
+	unsigned long pending;
+	unsigned int irq;
 
 	dev_dbg(bank->dev, "got irq for bank %s\n", bank->name);
 
 	chained_irq_enter(chip, desc);
 
-	pend = readl_relaxed(bank->reg_base + bank->gpio_regs->int_status);
-
-	while (pend) {
-		unsigned int irq, virq;
-
-		irq = __ffs(pend);
-		pend &= ~BIT(irq);
-		virq = irq_find_mapping(bank->domain, irq);
-
-		if (!virq) {
-			dev_err(bank->dev, "unmapped irq %d\n", irq);
-			continue;
-		}
-
+	pending = readl_relaxed(bank->reg_base + bank->gpio_regs->int_status);
+	for_each_set_bit(irq, &pending, 32) {
 		dev_dbg(bank->dev, "handling irq %d\n", irq);
 
 		/*
@@ -383,7 +382,7 @@ static void rockchip_irq_demux(struct irq_desc *desc)
 			} while ((data & BIT(irq)) != (data_old & BIT(irq)));
 		}
 
-		generic_handle_irq(virq);
+		generic_handle_domain_irq(bank->domain, irq);
 	}
 
 	chained_irq_exit(chip, desc);
@@ -417,20 +416,18 @@ static int rockchip_irq_set_type(struct irq_data *d, unsigned int type)
 	level = rockchip_gpio_readl(bank, bank->gpio_regs->int_type);
 	polarity = rockchip_gpio_readl(bank, bank->gpio_regs->int_polarity);
 
-	switch (type) {
-	case IRQ_TYPE_EDGE_BOTH:
+	if (type == IRQ_TYPE_EDGE_BOTH) {
 		if (bank->gpio_type == GPIO_TYPE_V2) {
-			bank->toggle_edge_mode &= ~mask;
 			rockchip_gpio_writel_bit(bank, d->hwirq, 1,
 						 bank->gpio_regs->int_bothedge);
 			goto out;
 		} else {
 			bank->toggle_edge_mode |= mask;
-			level |= mask;
+			level &= ~mask;
 
 			/*
 			 * Determine gpio state. If 1 next interrupt should be
-			 * falling otherwise rising.
+			 * low otherwise high.
 			 */
 			data = readl(bank->reg_base + bank->gpio_regs->ext_port);
 			if (data & mask)
@@ -438,30 +435,34 @@ static int rockchip_irq_set_type(struct irq_data *d, unsigned int type)
 			else
 				polarity |= mask;
 		}
-		break;
-	case IRQ_TYPE_EDGE_RISING:
-		bank->toggle_edge_mode &= ~mask;
-		level |= mask;
-		polarity |= mask;
-		break;
-	case IRQ_TYPE_EDGE_FALLING:
-		bank->toggle_edge_mode &= ~mask;
-		level |= mask;
-		polarity &= ~mask;
-		break;
-	case IRQ_TYPE_LEVEL_HIGH:
-		bank->toggle_edge_mode &= ~mask;
-		level &= ~mask;
-		polarity |= mask;
-		break;
-	case IRQ_TYPE_LEVEL_LOW:
-		bank->toggle_edge_mode &= ~mask;
-		level &= ~mask;
-		polarity &= ~mask;
-		break;
-	default:
-		ret = -EINVAL;
-		goto out;
+	} else {
+		if (bank->gpio_type == GPIO_TYPE_V2) {
+			rockchip_gpio_writel_bit(bank, d->hwirq, 0,
+						 bank->gpio_regs->int_bothedge);
+		} else {
+			bank->toggle_edge_mode &= ~mask;
+		}
+		switch (type) {
+		case IRQ_TYPE_EDGE_RISING:
+			level |= mask;
+			polarity |= mask;
+			break;
+		case IRQ_TYPE_EDGE_FALLING:
+			level |= mask;
+			polarity &= ~mask;
+			break;
+		case IRQ_TYPE_LEVEL_HIGH:
+			level &= ~mask;
+			polarity |= mask;
+			break;
+		case IRQ_TYPE_LEVEL_LOW:
+			level &= ~mask;
+			polarity &= ~mask;
+			break;
+		default:
+			ret = -EINVAL;
+			goto out;
+		}
 	}
 
 	rockchip_gpio_writel(bank, level, bank->gpio_regs->int_type);
@@ -470,6 +471,24 @@ out:
 	raw_spin_unlock_irqrestore(&bank->slock, flags);
 
 	return ret;
+}
+
+static int rockchip_irq_reqres(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct rockchip_pin_bank *bank = gc->private;
+
+	rockchip_gpio_direction_input(&bank->gpio_chip, d->hwirq);
+
+	return gpiochip_reqres_irq(&bank->gpio_chip, d->hwirq);
+}
+
+static void rockchip_irq_relres(struct irq_data *d)
+{
+	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+	struct rockchip_pin_bank *bank = gc->private;
+
+	gpiochip_relres_irq(&bank->gpio_chip, d->hwirq);
 }
 
 static void rockchip_irq_suspend(struct irq_data *d)
@@ -543,6 +562,8 @@ static int rockchip_interrupts_register(struct rockchip_pin_bank *bank)
 	gc->chip_types[0].chip.irq_suspend = rockchip_irq_suspend;
 	gc->chip_types[0].chip.irq_resume = rockchip_irq_resume;
 	gc->chip_types[0].chip.irq_set_type = rockchip_irq_set_type;
+	gc->chip_types[0].chip.irq_request_resources = rockchip_irq_reqres;
+	gc->chip_types[0].chip.irq_release_resources = rockchip_irq_relres;
 	gc->wake_enabled = IRQ_MSK(bank->nr_pins);
 
 	/*
@@ -609,13 +630,17 @@ static void rockchip_gpio_get_ver(struct rockchip_pin_bank *bank)
 {
 	int id = readl(bank->reg_base + gpio_regs_v2.version_id);
 
-	/* If not gpio v2, that is default to v1. */
-	if (id == GPIO_TYPE_V2 || id == GPIO_TYPE_V2_1) {
+	switch (id) {
+	case GPIO_TYPE_V2:
+	case GPIO_TYPE_V2_1:
+	case GPIO_TYPE_V2_2:
 		bank->gpio_regs = &gpio_regs_v2;
 		bank->gpio_type = GPIO_TYPE_V2;
-	} else {
+		break;
+	default:
 		bank->gpio_regs = &gpio_regs_v1;
 		bank->gpio_type = GPIO_TYPE_V1;
+		pr_info("Note: Use default GPIO_TYPE_V1!\n");
 	}
 }
 
@@ -789,6 +814,11 @@ static int rockchip_gpio_probe(struct platform_device *pdev)
 			if (ret)
 				dev_warn(dev, "setting output pin %u to %u failed\n", cfg->pin,
 					 cfg->arg);
+			break;
+		case PIN_CONFIG_INPUT_ENABLE:
+			ret = rockchip_gpio_direction_input(&bank->gpio_chip, cfg->pin);
+			if (ret)
+				dev_warn(dev, "setting input pin %u failed\n", cfg->pin);
 			break;
 		default:
 			dev_warn(dev, "unknown deferred config param %d\n", cfg->param);

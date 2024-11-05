@@ -408,15 +408,15 @@ void tcp_update_metrics(struct sock *sk)
 		if (!READ_ONCE(net->ipv4.sysctl_tcp_no_ssthresh_metrics_save) &&
 		    !tcp_metric_locked(tm, TCP_METRIC_SSTHRESH)) {
 			val = tcp_metric_get(tm, TCP_METRIC_SSTHRESH);
-			if (val && (tp->snd_cwnd >> 1) > val)
+			if (val && (tcp_snd_cwnd(tp) >> 1) > val)
 				tcp_metric_set(tm, TCP_METRIC_SSTHRESH,
-					       tp->snd_cwnd >> 1);
+					       tcp_snd_cwnd(tp) >> 1);
 		}
 		if (!tcp_metric_locked(tm, TCP_METRIC_CWND)) {
 			val = tcp_metric_get(tm, TCP_METRIC_CWND);
-			if (tp->snd_cwnd > val)
+			if (tcp_snd_cwnd(tp) > val)
 				tcp_metric_set(tm, TCP_METRIC_CWND,
-					       tp->snd_cwnd);
+					       tcp_snd_cwnd(tp));
 		}
 	} else if (!tcp_in_slow_start(tp) &&
 		   icsk->icsk_ca_state == TCP_CA_Open) {
@@ -424,10 +424,10 @@ void tcp_update_metrics(struct sock *sk)
 		if (!READ_ONCE(net->ipv4.sysctl_tcp_no_ssthresh_metrics_save) &&
 		    !tcp_metric_locked(tm, TCP_METRIC_SSTHRESH))
 			tcp_metric_set(tm, TCP_METRIC_SSTHRESH,
-				       max(tp->snd_cwnd >> 1, tp->snd_ssthresh));
+				       max(tcp_snd_cwnd(tp) >> 1, tp->snd_ssthresh));
 		if (!tcp_metric_locked(tm, TCP_METRIC_CWND)) {
 			val = tcp_metric_get(tm, TCP_METRIC_CWND);
-			tcp_metric_set(tm, TCP_METRIC_CWND, (val + tp->snd_cwnd) >> 1);
+			tcp_metric_set(tm, TCP_METRIC_CWND, (val + tcp_snd_cwnd(tp)) >> 1);
 		}
 	} else {
 		/* Else slow start did not finish, cwnd is non-sense,
@@ -470,11 +470,15 @@ void tcp_init_metrics(struct sock *sk)
 	u32 val, crtt = 0; /* cached RTT scaled by 8 */
 
 	sk_dst_confirm(sk);
+	/* ssthresh may have been reduced unnecessarily during.
+	 * 3WHS. Restore it back to its initial default.
+	 */
+	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	if (!dst)
 		goto reset;
 
 	rcu_read_lock();
-	tm = tcp_get_metrics(sk, dst, true);
+	tm = tcp_get_metrics(sk, dst, false);
 	if (!tm) {
 		rcu_read_unlock();
 		goto reset;
@@ -489,11 +493,6 @@ void tcp_init_metrics(struct sock *sk)
 		tp->snd_ssthresh = val;
 		if (tp->snd_ssthresh > tp->snd_cwnd_clamp)
 			tp->snd_ssthresh = tp->snd_cwnd_clamp;
-	} else {
-		/* ssthresh may have been reduced unnecessarily during.
-		 * 3WHS. Restore it back to its initial default.
-		 */
-		tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	}
 	val = tcp_metric_get(tm, TCP_METRIC_REORDERING);
 	if (val && tp->reordering != val)
@@ -906,9 +905,9 @@ static void tcp_metrics_flush_all(struct net *net)
 		pp = &hb->chain;
 		for (tm = deref_locked(*pp); tm; tm = deref_locked(*pp)) {
 			match = net ? net_eq(tm_net(tm), net) :
-				!refcount_read(&tm_net(tm)->count);
+				!refcount_read(&tm_net(tm)->ns.count);
 			if (match) {
-				*pp = tm->tcpm_next;
+				rcu_assign_pointer(*pp, tm->tcpm_next);
 				kfree_rcu(tm, rcu_head);
 			} else {
 				pp = &tm->tcpm_next;
@@ -949,7 +948,7 @@ static int tcp_metrics_nl_cmd_del(struct sk_buff *skb, struct genl_info *info)
 		if (addr_same(&tm->tcpm_daddr, &daddr) &&
 		    (!src || addr_same(&tm->tcpm_saddr, &saddr)) &&
 		    net_eq(tm_net(tm), net)) {
-			*pp = tm->tcpm_next;
+			rcu_assign_pointer(*pp, tm->tcpm_next);
 			kfree_rcu(tm, rcu_head);
 			found = true;
 		} else {
@@ -987,6 +986,7 @@ static struct genl_family tcp_metrics_nl_family __ro_after_init = {
 	.module		= THIS_MODULE,
 	.small_ops	= tcp_metrics_nl_ops,
 	.n_small_ops	= ARRAY_SIZE(tcp_metrics_nl_ops),
+	.resv_start_op	= TCP_METRICS_CMD_DEL + 1,
 };
 
 static unsigned int tcpmhash_entries;

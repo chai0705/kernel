@@ -30,6 +30,7 @@
 #include "conntrack.h"
 #include "vport.h"
 #include "flow_netlink.h"
+#include "openvswitch_trace.h"
 
 struct deferred_action {
 	struct sk_buff *skb;
@@ -912,7 +913,7 @@ static void do_output(struct datapath *dp, struct sk_buff *skb, int out_port,
 {
 	struct vport *vport = ovs_vport_rcu(dp, out_port);
 
-	if (likely(vport)) {
+	if (likely(vport && netif_carrier_ok(vport->dev))) {
 		u16 mru = OVS_CB(skb)->mru;
 		u32 cutlen = OVS_CB(skb)->cutlen;
 
@@ -959,7 +960,13 @@ static int output_userspace(struct datapath *dp, struct sk_buff *skb,
 			break;
 
 		case OVS_USERSPACE_ATTR_PID:
-			upcall.portid = nla_get_u32(a);
+			if (dp->user_features &
+			    OVS_DP_F_DISPATCH_UPCALL_PER_CPU)
+				upcall.portid =
+				  ovs_dp_get_upcall_portid(dp,
+							   smp_processor_id());
+			else
+				upcall.portid = nla_get_u32(a);
 			break;
 
 		case OVS_USERSPACE_ATTR_EGRESS_TUN_PORT: {
@@ -993,14 +1000,14 @@ static int output_userspace(struct datapath *dp, struct sk_buff *skb,
 
 static int dec_ttl_exception_handler(struct datapath *dp, struct sk_buff *skb,
 				     struct sw_flow_key *key,
-				     const struct nlattr *attr, bool last)
+				     const struct nlattr *attr)
 {
 	/* The first attribute is always 'OVS_DEC_TTL_ATTR_ACTION'. */
 	struct nlattr *actions = nla_data(attr);
 
 	if (nla_len(actions))
 		return clone_execute(dp, skb, key, 0, nla_data(actions),
-				     nla_len(actions), last, false);
+				     nla_len(actions), true, false);
 
 	consume_skb(skb);
 	return 0;
@@ -1026,7 +1033,7 @@ static int sample(struct datapath *dp, struct sk_buff *skb,
 	actions = nla_next(sample_arg, &rem);
 
 	if ((arg->probability != U32_MAX) &&
-	    (!arg->probability || prandom_u32() > arg->probability)) {
+	    (!arg->probability || get_random_u32() > arg->probability)) {
 		if (last)
 			consume_skb(skb);
 		return 0;
@@ -1278,6 +1285,9 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 	     a = nla_next(a, &rem)) {
 		int err = 0;
 
+		if (trace_ovs_do_execute_action_enabled())
+			trace_ovs_do_execute_action(dp, skb, key, a, rem);
+
 		switch (nla_type(a)) {
 		case OVS_ACTION_ATTR_OUTPUT: {
 			int port = nla_get_u32(a);
@@ -1454,11 +1464,9 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 		case OVS_ACTION_ATTR_DEC_TTL:
 			err = execute_dec_ttl(skb, key);
-			if (err == -EHOSTUNREACH) {
-				err = dec_ttl_exception_handler(dp, skb, key,
-								a, true);
-				return err;
-			}
+			if (err == -EHOSTUNREACH)
+				return dec_ttl_exception_handler(dp, skb,
+								 key, a);
 			break;
 		}
 
@@ -1537,8 +1545,8 @@ static int clone_execute(struct datapath *dp, struct sk_buff *skb,
 				pr_warn("%s: deferred action limit reached, drop sample action\n",
 					ovs_dp_name(dp));
 			} else {  /* Recirc action */
-				pr_warn("%s: deferred action limit reached, drop recirc action\n",
-					ovs_dp_name(dp));
+				pr_warn("%s: deferred action limit reached, drop recirc action (recirc_id=%#x)\n",
+					ovs_dp_name(dp), recirc_id);
 			}
 		}
 	}

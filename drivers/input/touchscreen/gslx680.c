@@ -1835,7 +1835,7 @@ static int gsl_ts_probe(struct i2c_client *client,
 	return rc;
 }
 
-static int gsl_ts_remove(struct i2c_client *client)
+static void gsl_ts_remove(struct i2c_client *client)
 {
 	struct gsl_ts *ts = i2c_get_clientdata(client);
 
@@ -1858,8 +1858,6 @@ static int gsl_ts_remove(struct i2c_client *client)
 	free_irq(ts->client->irq, ts);
 	destroy_workqueue(ts->wq);
 	//device_remove_file(&ts->input->dev, &dev_attr_debug_enable);
-
-	return 0;
 }
 
 static const struct i2c_device_id gsl_ts_id[] = {

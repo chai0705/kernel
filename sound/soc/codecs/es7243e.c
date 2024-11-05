@@ -1688,7 +1688,7 @@ static struct snd_soc_dai_driver es7243e_dai0 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 2
@@ -1702,7 +1702,7 @@ static struct snd_soc_dai_driver es7243e_dai1 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 4
@@ -1716,7 +1716,7 @@ static struct snd_soc_dai_driver es7243e_dai2 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 6
@@ -1730,7 +1730,7 @@ static struct snd_soc_dai_driver es7243e_dai3 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 8
@@ -1744,7 +1744,7 @@ static struct snd_soc_dai_driver es7243e_dai5 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 10
@@ -1758,7 +1758,7 @@ static struct snd_soc_dai_driver es7243e_dai6 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 12
@@ -1772,7 +1772,7 @@ static struct snd_soc_dai_driver es7243e_dai7 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 #if ES7243E_CHANNELS_MAX > 14
@@ -1786,7 +1786,7 @@ static struct snd_soc_dai_driver es7243e_dai8 = {
 		    .formats = es7243e_FORMATS,
 		    },
 	.ops = &es7243e_ops,
-	.symmetric_rates = 1,
+	.symmetric_rate = 1,
 };
 #endif
 static struct snd_soc_dai_driver *es7243e_dai[] = {
@@ -2263,7 +2263,6 @@ static struct snd_soc_component_driver soc_codec_dev_es7243e = {
 	.idle_bias_on = 1,
 	.use_pmdown_time = 1,
 	.endianness = 1,
-	.non_legacy_dai_naming = 1,
 #if ES7243E_CODEC_RW_TEST_EN
 	.read = es7243e_codec_read,
 	.write = es7243e_codec_write,
@@ -2392,11 +2391,9 @@ es7243e_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id *i2c_id)
 	return ret;
 }
 
-static int __exit es7243e_i2c_remove(struct i2c_client *i2c)
+static void __exit es7243e_i2c_remove(struct i2c_client *i2c)
 {
 	sysfs_remove_group(&i2c->dev.kobj, &es7243e_debug_attr_group);
-
-	return 0;
 }
 
 #if !ES7243E_MATCH_DTS_EN

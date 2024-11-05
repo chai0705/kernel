@@ -22,6 +22,8 @@
 #include "cipherapi.h"
 #include "rk_cryptodev.h"
 
+MODULE_IMPORT_NS(DMA_BUF);
+
 #define MAX_CRYPTO_DEV		1
 #define MAX_CRYPTO_NAME_LEN	64
 
@@ -707,6 +709,9 @@ static int crypto_rsa_run(struct fcrypt *fcr, struct kernel_crypt_rsa_op *krop)
 
 	crypto_init_wait(&wait);
 	akcipher_request_set_crypt(req, &src, &dst, rop->in_len, out_len_max);
+
+	akcipher_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
+				      crypto_req_done, &wait);
 
 	switch (rop->op) {
 	case AOP_ENCRYPT:

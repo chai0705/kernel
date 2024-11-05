@@ -2167,7 +2167,7 @@ err_1:
 	return ret;
 }
 
-static int sc8551_charger_remove(struct i2c_client *client)
+static void sc8551_charger_remove(struct i2c_client *client)
 {
 	struct sc8551 *sc = i2c_get_clientdata(client);
 
@@ -2178,8 +2178,6 @@ static int sc8551_charger_remove(struct i2c_client *client)
 
 	mutex_destroy(&sc->data_lock);
 	mutex_destroy(&sc->i2c_rw_lock);
-
-	return 0;
 }
 
 static void sc8551_charger_shutdown(struct i2c_client *client)

@@ -14,14 +14,14 @@
 	ldr	scs_sp, [scs_sp, #TSK_TI_SCS_SP]
 	.endm
 
-	.macro scs_save tsk, tmp
+	.macro scs_save tsk
 	str	scs_sp, [\tsk, #TSK_TI_SCS_SP]
 	.endm
 #else
 	.macro scs_load_current
 	.endm
 
-	.macro scs_save tsk, tmp
+	.macro scs_save tsk
 	.endm
 #endif /* CONFIG_SHADOW_CALL_STACK */
 

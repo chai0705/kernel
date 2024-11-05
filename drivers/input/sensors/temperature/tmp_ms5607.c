@@ -284,9 +284,9 @@ static int temperature_ms5607_probe(struct i2c_client *client, const struct i2c_
 	return sensor_register_device(client, NULL, devid, &temperature_ms5607_ops);
 }
 
-static int temperature_ms5607_remove(struct i2c_client *client)
+static void temperature_ms5607_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &temperature_ms5607_ops);
+	sensor_unregister_device(client, NULL, &temperature_ms5607_ops);
 }
 
 static const struct i2c_device_id temperature_ms5607_id[] = {
@@ -296,7 +296,7 @@ static const struct i2c_device_id temperature_ms5607_id[] = {
 
 static struct i2c_driver temperature_ms5607_driver = {
 	.probe = temperature_ms5607_probe,
-	.remove = temperature_ms5607_remove,
+	.remove = (void *)temperature_ms5607_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = temperature_ms5607_id,
 	.driver = {

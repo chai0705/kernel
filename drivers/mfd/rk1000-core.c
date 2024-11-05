@@ -138,14 +138,12 @@ clk_err:
 	return ret;
 }
 
-static int rk1000_remove(struct i2c_client *client)
+static void rk1000_remove(struct i2c_client *client)
 {
 	struct rk1000 *rk1000 = i2c_get_clientdata(client);
 
 	clk_disable_unprepare(rk1000->mclk);
 	mfd_remove_devices(rk1000->dev);
-
-	return 0;
 }
 
 static const struct i2c_device_id rk1000_id[] = {

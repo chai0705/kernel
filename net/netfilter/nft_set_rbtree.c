@@ -14,9 +14,6 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nf_tables.h>
 #include <net/netfilter/nf_tables_core.h>
-#include <net/netns/generic.h>
-
-extern unsigned int nf_tables_net_id;
 
 struct nft_rbtree {
 	struct rb_root		root;
@@ -116,8 +113,9 @@ static bool __nft_rbtree_lookup(const struct net *net, const struct nft_set *set
 	return false;
 }
 
-static bool nft_rbtree_lookup(const struct net *net, const struct nft_set *set,
-			      const u32 *key, const struct nft_set_ext **ext)
+INDIRECT_CALLABLE_SCOPE
+bool nft_rbtree_lookup(const struct net *net, const struct nft_set *set,
+		       const u32 *key, const struct nft_set_ext **ext)
 {
 	struct nft_rbtree *priv = nft_set_priv(set);
 	unsigned int seq = read_seqcount_begin(&priv->count);
@@ -228,7 +226,7 @@ static void nft_rbtree_gc_remove(struct net *net, struct nft_set *set,
 				 struct nft_rbtree_elem *rbe)
 {
 	struct nft_set_elem elem = {
-		.priv   = rbe,
+		.priv	= rbe,
 	};
 
 	nft_setelem_data_deactivate(net, set, &elem);
@@ -570,6 +568,8 @@ static void *nft_rbtree_deactivate(const struct net *net,
 				   nft_rbtree_interval_end(this)) {
 				parent = parent->rb_right;
 				continue;
+			} else if (nft_set_elem_expired(&rbe->ext)) {
+				break;
 			} else if (!nft_set_elem_active(&rbe->ext, genmask)) {
 				parent = parent->rb_left;
 				continue;
@@ -626,8 +626,8 @@ static void nft_rbtree_gc(struct work_struct *work)
 	priv = container_of(work, struct nft_rbtree, gc_work.work);
 	set  = nft_set_container_of(priv);
 	net  = read_pnet(&set->net);
-	nft_net = net_generic(net, nf_tables_net_id);
-	gc_seq	= READ_ONCE(nft_net->gc_seq);
+	nft_net = nft_pernet(net);
+	gc_seq  = READ_ONCE(nft_net->gc_seq);
 
 	if (nft_set_gc_is_pending(set))
 		goto done;
@@ -682,6 +682,9 @@ dead_elem:
 
 		nft_trans_gc_elem_add(gc, rbe);
 	}
+
+	gc = nft_trans_gc_catchall_async(gc, gc_seq);
+
 try_later:
 	read_unlock_bh(&priv->lock);
 

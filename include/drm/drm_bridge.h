@@ -171,6 +171,11 @@ struct drm_bridge_funcs {
 	 * signals) feeding it is still running when this callback is called.
 	 *
 	 * The @disable callback is optional.
+	 *
+	 * NOTE:
+	 *
+	 * This is deprecated, do not use!
+	 * New drivers shall use &drm_bridge_funcs.atomic_disable.
 	 */
 	void (*disable)(struct drm_bridge *bridge);
 
@@ -186,10 +191,15 @@ struct drm_bridge_funcs {
 	 * or &drm_encoder_helper_funcs.dpms hook.
 	 *
 	 * The bridge must assume that the display pipe (i.e. clocks and timing
-	 * singals) feeding it is no longer running when this callback is
+	 * signals) feeding it is no longer running when this callback is
 	 * called.
 	 *
 	 * The @post_disable callback is optional.
+	 *
+	 * NOTE:
+	 *
+	 * This is deprecated, do not use!
+	 * New drivers shall use &drm_bridge_funcs.atomic_post_disable.
 	 */
 	void (*post_disable)(struct drm_bridge *bridge);
 
@@ -215,9 +225,9 @@ struct drm_bridge_funcs {
 	 *
 	 * NOTE:
 	 *
-	 * If a need arises to store and access modes adjusted for other
-	 * locations than the connection between the CRTC and the first bridge,
-	 * the DRM framework will have to be extended with DRM bridge states.
+	 * This is deprecated, do not use!
+	 * New drivers shall set their mode in the
+	 * &drm_bridge_funcs.atomic_enable operation.
 	 */
 	void (*mode_set)(struct drm_bridge *bridge,
 			 const struct drm_display_mode *mode,
@@ -239,6 +249,11 @@ struct drm_bridge_funcs {
 	 * there is one) when this callback is called.
 	 *
 	 * The @pre_enable callback is optional.
+	 *
+	 * NOTE:
+	 *
+	 * This is deprecated, do not use!
+	 * New drivers shall use &drm_bridge_funcs.atomic_pre_enable.
 	 */
 	void (*pre_enable)(struct drm_bridge *bridge);
 
@@ -259,6 +274,11 @@ struct drm_bridge_funcs {
 	 * chain if there is one.
 	 *
 	 * The @enable callback is optional.
+	 *
+	 * NOTE:
+	 *
+	 * This is deprecated, do not use!
+	 * New drivers shall use &drm_bridge_funcs.atomic_enable.
 	 */
 	void (*enable)(struct drm_bridge *bridge);
 
@@ -629,6 +649,13 @@ struct drm_bridge_funcs {
 	 * the DRM_BRIDGE_OP_HPD flag in their &drm_bridge->ops.
 	 */
 	void (*hpd_disable)(struct drm_bridge *bridge);
+
+	/**
+	 * @debugfs_init:
+	 *
+	 * Allows bridges to create bridge-specific debugfs files.
+	 */
+	void (*debugfs_init)(struct drm_bridge *bridge, struct dentry *root);
 };
 
 /**
@@ -742,6 +769,14 @@ struct drm_bridge {
 	 */
 	bool interlace_allowed;
 	/**
+	 * @pre_enable_prev_first: The bridge requires that the prev
+	 * bridge @pre_enable function is called before its @pre_enable,
+	 * and conversely for post_disable. This is most frequently a
+	 * requirement for DSI devices which need the host to be initialised
+	 * before the peripheral.
+	 */
+	bool pre_enable_prev_first;
+	/**
 	 * @ddc: Associated I2C adapter for DDC access, if any.
 	 */
 	struct i2c_adapter *ddc;
@@ -769,11 +804,20 @@ drm_priv_to_bridge(struct drm_private_obj *priv)
 }
 
 void drm_bridge_add(struct drm_bridge *bridge);
+int devm_drm_bridge_add(struct device *dev, struct drm_bridge *bridge);
 void drm_bridge_remove(struct drm_bridge *bridge);
-struct drm_bridge *of_drm_find_bridge(struct device_node *np);
 int drm_bridge_attach(struct drm_encoder *encoder, struct drm_bridge *bridge,
 		      struct drm_bridge *previous,
 		      enum drm_bridge_attach_flags flags);
+
+#ifdef CONFIG_OF
+struct drm_bridge *of_drm_find_bridge(struct device_node *np);
+#else
+static inline struct drm_bridge *of_drm_find_bridge(struct device_node *np)
+{
+	return NULL;
+}
+#endif
 
 /**
  * drm_bridge_get_next_bridge() - Get the next bridge in the chain
@@ -882,16 +926,55 @@ void drm_bridge_hpd_notify(struct drm_bridge *bridge,
 			   enum drm_connector_status status);
 
 #ifdef CONFIG_DRM_PANEL_BRIDGE
+bool drm_bridge_is_panel(const struct drm_bridge *bridge);
 struct drm_bridge *drm_panel_bridge_add(struct drm_panel *panel);
 struct drm_bridge *drm_panel_bridge_add_typed(struct drm_panel *panel,
 					      u32 connector_type);
 void drm_panel_bridge_remove(struct drm_bridge *bridge);
+int drm_panel_bridge_set_orientation(struct drm_connector *connector,
+				     struct drm_bridge *bridge);
 struct drm_bridge *devm_drm_panel_bridge_add(struct device *dev,
 					     struct drm_panel *panel);
 struct drm_bridge *devm_drm_panel_bridge_add_typed(struct device *dev,
 						   struct drm_panel *panel,
 						   u32 connector_type);
+struct drm_bridge *drmm_panel_bridge_add(struct drm_device *drm,
+					     struct drm_panel *panel);
 struct drm_connector *drm_panel_bridge_connector(struct drm_bridge *bridge);
+#else
+static inline bool drm_bridge_is_panel(const struct drm_bridge *bridge)
+{
+	return false;
+}
+
+static inline int drm_panel_bridge_set_orientation(struct drm_connector *connector,
+						   struct drm_bridge *bridge)
+{
+	return -EINVAL;
+}
+#endif
+
+#if defined(CONFIG_OF) && defined(CONFIG_DRM_PANEL_BRIDGE)
+struct drm_bridge *devm_drm_of_get_bridge(struct device *dev, struct device_node *node,
+					  u32 port, u32 endpoint);
+struct drm_bridge *drmm_of_get_bridge(struct drm_device *drm, struct device_node *node,
+					  u32 port, u32 endpoint);
+#else
+static inline struct drm_bridge *devm_drm_of_get_bridge(struct device *dev,
+							struct device_node *node,
+							u32 port,
+							u32 endpoint)
+{
+	return ERR_PTR(-ENODEV);
+}
+
+static inline struct drm_bridge *drmm_of_get_bridge(struct drm_device *drm,
+						     struct device_node *node,
+						     u32 port,
+						     u32 endpoint)
+{
+	return ERR_PTR(-ENODEV);
+}
 #endif
 
 #endif

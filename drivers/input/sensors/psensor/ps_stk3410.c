@@ -347,9 +347,9 @@ static int proximity_stk3410_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &psensor_stk3410_ops);
 }
 
-static int proximity_stk3410_remove(struct i2c_client *client)
+static void proximity_stk3410_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &psensor_stk3410_ops);
+	sensor_unregister_device(client, NULL, &psensor_stk3410_ops);
 }
 
 static const struct i2c_device_id proximity_stk3410_id[] = {
@@ -359,7 +359,7 @@ static const struct i2c_device_id proximity_stk3410_id[] = {
 
 static struct i2c_driver proximity_stk3410_driver = {
 	.probe = proximity_stk3410_probe,
-	.remove = proximity_stk3410_remove,
+	.remove = (void *)proximity_stk3410_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = proximity_stk3410_id,
 	.driver = {

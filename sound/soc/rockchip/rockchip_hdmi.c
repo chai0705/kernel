@@ -87,11 +87,11 @@ static int rk_dailink_init(struct snd_soc_pcm_runtime *rtd)
 	if (ret < 0)
 		return ret;
 
-	ret = snd_soc_card_jack_new(rtd->card,
-				    rk_data->hdmi_jack_pin.pin,
-				    rk_data->hdmi_jack_pin.mask,
-				    &rk_data->hdmi_jack,
-				    &rk_data->hdmi_jack_pin, 1);
+	ret = snd_soc_card_jack_new_pins(rtd->card,
+					 rk_data->hdmi_jack_pin.pin,
+					 rk_data->hdmi_jack_pin.mask,
+					 &rk_data->hdmi_jack,
+					 &rk_data->hdmi_jack_pin, 1);
 	if (ret) {
 		dev_err(dev, "Can't new HDMI Jack %d\n", ret);
 		return ret;
@@ -138,23 +138,29 @@ static const struct snd_soc_ops rk_ops = {
 };
 
 static unsigned int rk_hdmi_parse_daifmt(struct device_node *node,
-				struct device_node *cpu,
+				struct device_node *codec,
 				char *prefix)
 {
 	struct device_node *bitclkmaster = NULL;
 	struct device_node *framemaster = NULL;
 	unsigned int daifmt;
 
-	daifmt = snd_soc_of_parse_daifmt(node, prefix,
-					 &bitclkmaster, &framemaster);
-	daifmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
+	daifmt = snd_soc_daifmt_parse_format(node, prefix);
 
-	if (!bitclkmaster || cpu == bitclkmaster)
-		daifmt |= (!framemaster || cpu == framemaster) ?
-			SND_SOC_DAIFMT_CBS_CFS : SND_SOC_DAIFMT_CBS_CFM;
-	else
-		daifmt |= (!framemaster || cpu == framemaster) ?
-			SND_SOC_DAIFMT_CBM_CFS : SND_SOC_DAIFMT_CBM_CFM;
+	snd_soc_daifmt_parse_clock_provider_as_phandle(node, prefix, &bitclkmaster, &framemaster);
+	if (!bitclkmaster && !framemaster) {
+		/*
+		 * No dai-link level and master setting was not found from
+		 * sound node level, revert back to legacy DT parsing and
+		 * take the settings from codec node.
+		 */
+		pr_debug("%s: Revert to legacy daifmt parsing\n", __func__);
+
+		daifmt |= snd_soc_daifmt_parse_clock_provider_as_flag(codec, NULL);
+	} else {
+		daifmt |= snd_soc_daifmt_clock_provider_from_bitmap(
+				((codec == bitclkmaster) << 4) | (codec == framemaster));
+	}
 
 	/*
 	 * If there is NULL format means that the format isn't specified, we
@@ -254,7 +260,7 @@ static int rk_hdmi_probe(struct platform_device *pdev)
 	if (!cpu_np)
 		return -ENODEV;
 
-	rk_data->dai.dai_fmt = rk_hdmi_parse_daifmt(np, cpu_np, "rockchip,");
+	rk_data->dai.dai_fmt = rk_hdmi_parse_daifmt(np, codecs[0].of_node, "rockchip,");
 	rk_data->mclk_fs = DEFAULT_MCLK_FS;
 	if (!of_property_read_u32(np, "rockchip,mclk-fs", &val))
 		rk_data->mclk_fs = val;

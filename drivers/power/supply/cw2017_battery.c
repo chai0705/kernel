@@ -19,6 +19,7 @@
 #include <linux/regmap.h>
 #include <linux/time.h>
 #include <linux/workqueue.h>
+#include <linux/devm-helpers.h>
 
 #define CW2017_SIZE_BATINFO		80
 
@@ -70,7 +71,7 @@ struct cw_battery {
 	struct delayed_work battery_delay_work;
 	struct regmap *regmap;
 	struct power_supply *rk_bat;
-	struct power_supply_battery_info battery;
+	struct power_supply_battery_info *battery;
 	u8 *bat_profile;
 
 	bool charger_attached;
@@ -431,8 +432,8 @@ static int cw_battery_get_property(struct power_supply *psy,
 
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
-		if (cw_bat->battery.charge_full_design_uah > 0)
-			val->intval = cw_bat->battery.charge_full_design_uah;
+		if (cw_bat->battery->charge_full_design_uah > 0)
+			val->intval = cw_bat->battery->charge_full_design_uah;
 		else
 			val->intval = cw_bat->design_capacity * 1000;
 		break;
@@ -601,18 +602,30 @@ static int cw_bat_probe(struct i2c_client *client)
 						    &cw2017_bat_desc,
 						    &psy_cfg);
 	if (IS_ERR(cw_bat->rk_bat)) {
-		dev_err(cw_bat->dev, "Failed to register power supply\n");
+		/* try again if this happens */
+		dev_err_probe(&client->dev, PTR_ERR(cw_bat->rk_bat),
+			"Failed to register power supply\n");
 		return PTR_ERR(cw_bat->rk_bat);
 	}
 
 	ret = power_supply_get_battery_info(cw_bat->rk_bat, &cw_bat->battery);
 	if (ret) {
+		/* Allocate an empty battery */
+		cw_bat->battery = devm_kzalloc(&client->dev,
+					       sizeof(*cw_bat->battery),
+					       GFP_KERNEL);
+		if (!cw_bat->battery)
+			return -ENOMEM;
 		dev_warn(cw_bat->dev,
 			 "No monitored battery, some properties will be missing\n");
 	}
 
 	cw_bat->battery_workqueue = create_singlethread_workqueue("rk_battery");
-	INIT_DELAYED_WORK(&cw_bat->battery_delay_work, cw_bat_work);
+	if (!cw_bat->battery_workqueue)
+		return -ENOMEM;
+
+	devm_delayed_work_autocancel(&client->dev,
+				     &cw_bat->battery_delay_work, cw_bat_work);
 	queue_delayed_work(cw_bat->battery_workqueue,
 			   &cw_bat->battery_delay_work, msecs_to_jiffies(10));
 
@@ -640,15 +653,6 @@ static int __maybe_unused cw_bat_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(cw_bat_pm_ops, cw_bat_suspend, cw_bat_resume);
 
-static int cw_bat_remove(struct i2c_client *client)
-{
-	struct cw_battery *cw_bat = i2c_get_clientdata(client);
-
-	cancel_delayed_work_sync(&cw_bat->battery_delay_work);
-	power_supply_put_battery_info(cw_bat->rk_bat, &cw_bat->battery);
-	return 0;
-}
-
 static const struct i2c_device_id cw_bat_id_table[] = {
 	{ "cw2017", 0 },
 	{ }
@@ -667,7 +671,6 @@ static struct i2c_driver cw_bat_driver = {
 		.pm = &cw_bat_pm_ops,
 	},
 	.probe_new = cw_bat_probe,
-	.remove = cw_bat_remove,
 	.id_table = cw_bat_id_table,
 };
 

@@ -302,9 +302,9 @@ static int gsensor_kxtj9_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &gsensor_kxtj9_ops);
 }
 
-static int gsensor_kxtj9_remove(struct i2c_client *client)
+static void gsensor_kxtj9_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &gsensor_kxtj9_ops);
+	sensor_unregister_device(client, NULL, &gsensor_kxtj9_ops);
 }
 
 static const struct i2c_device_id gsensor_kxtj9_id[] = {
@@ -314,7 +314,7 @@ static const struct i2c_device_id gsensor_kxtj9_id[] = {
 
 static struct i2c_driver gsensor_kxtj9_driver = {
 	.probe = gsensor_kxtj9_probe,
-	.remove = gsensor_kxtj9_remove,
+	.remove = (void *)gsensor_kxtj9_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = gsensor_kxtj9_id,
 	.driver = {

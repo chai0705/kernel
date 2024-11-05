@@ -94,7 +94,8 @@
 #define DP83822_WOL_INDICATION_SEL BIT(8)
 #define DP83822_WOL_CLR_INDICATION BIT(11)
 
-/* RSCR bits */
+/* RCSR bits */
+#define DP83822_RGMII_MODE_EN	BIT(9)
 #define DP83822_RX_CLK_SHIFT	BIT(12)
 #define DP83822_TX_CLK_SHIFT	BIT(11)
 
@@ -118,21 +119,6 @@ struct dp83822_private {
 	int fx_enabled;
 	u16 fx_sd_enable;
 };
-
-static int dp83822_ack_interrupt(struct phy_device *phydev)
-{
-	int err;
-
-	err = phy_read(phydev, MII_DP83822_MISR1);
-	if (err < 0)
-		return err;
-
-	err = phy_read(phydev, MII_DP83822_MISR2);
-	if (err < 0)
-		return err;
-
-	return 0;
-}
 
 static int dp83822_set_wol(struct phy_device *phydev,
 			   struct ethtool_wolinfo *wol)
@@ -302,6 +288,42 @@ static int dp83822_config_intr(struct phy_device *phydev)
 	return phy_write(phydev, MII_DP83822_PHYSCR, physcr_status);
 }
 
+static irqreturn_t dp83822_handle_interrupt(struct phy_device *phydev)
+{
+	bool trigger_machine = false;
+	int irq_status;
+
+	/* The MISR1 and MISR2 registers are holding the interrupt status in
+	 * the upper half (15:8), while the lower half (7:0) is used for
+	 * controlling the interrupt enable state of those individual interrupt
+	 * sources. To determine the possible interrupt sources, just read the
+	 * MISR* register and use it directly to know which interrupts have
+	 * been enabled previously or not.
+	 */
+	irq_status = phy_read(phydev, MII_DP83822_MISR1);
+	if (irq_status < 0) {
+		phy_error(phydev);
+		return IRQ_NONE;
+	}
+	if (irq_status & ((irq_status & GENMASK(7, 0)) << 8))
+		trigger_machine = true;
+
+	irq_status = phy_read(phydev, MII_DP83822_MISR2);
+	if (irq_status < 0) {
+		phy_error(phydev);
+		return IRQ_NONE;
+	}
+	if (irq_status & ((irq_status & GENMASK(7, 0)) << 8))
+		trigger_machine = true;
+
+	if (!trigger_machine)
+		return IRQ_NONE;
+
+	phy_trigger_machine(phydev);
+
+	return IRQ_HANDLED;
+}
+
 static int dp8382x_disable_wol(struct phy_device *phydev)
 {
 	return phy_clear_bits_mmd(phydev, DP83822_DEVADDR, MII_DP83822_WOL_CFG,
@@ -386,6 +408,12 @@ static int dp83822_config_init(struct phy_device *phydev)
 			if (err)
 				return err;
 		}
+
+		phy_set_bits_mmd(phydev, DP83822_DEVADDR,
+					MII_DP83822_RCSR, DP83822_RGMII_MODE_EN);
+	} else {
+		phy_clear_bits_mmd(phydev, DP83822_DEVADDR,
+					MII_DP83822_RCSR, DP83822_RGMII_MODE_EN);
 	}
 
 	if (dp83822->fx_enabled) {
@@ -574,8 +602,8 @@ static int dp83822_resume(struct phy_device *phydev)
 		.read_status	= dp83822_read_status,		\
 		.get_wol = dp83822_get_wol,			\
 		.set_wol = dp83822_set_wol,			\
-		.ack_interrupt = dp83822_ack_interrupt,		\
 		.config_intr = dp83822_config_intr,		\
+		.handle_interrupt = dp83822_handle_interrupt,	\
 		.suspend = dp83822_suspend,			\
 		.resume = dp83822_resume,			\
 	}
@@ -589,8 +617,8 @@ static int dp83822_resume(struct phy_device *phydev)
 		.config_init	= dp8382x_config_init,		\
 		.get_wol = dp83822_get_wol,			\
 		.set_wol = dp83822_set_wol,			\
-		.ack_interrupt = dp83822_ack_interrupt,		\
 		.config_intr = dp83822_config_intr,		\
+		.handle_interrupt = dp83822_handle_interrupt,	\
 		.suspend = dp83822_suspend,			\
 		.resume = dp83822_resume,			\
 	}

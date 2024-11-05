@@ -1354,7 +1354,7 @@ exit:
 	return ret;
 }
 
-static int aw87xxx_i2c_remove(struct i2c_client *client)
+static void aw87xxx_i2c_remove(struct i2c_client *client)
 {
 	struct aw87xxx *aw87xxx = i2c_get_clientdata(client);
 
@@ -1369,8 +1369,6 @@ static int aw87xxx_i2c_remove(struct i2c_client *client)
 	g_aw87xxx_dev_cnt--;
 	list_del(&aw87xxx->list);
 	mutex_unlock(&g_aw87xxx_mutex_lock);
-
-	return 0;
 }
 
 static void aw87xxx_i2c_shutdown(struct i2c_client *client)

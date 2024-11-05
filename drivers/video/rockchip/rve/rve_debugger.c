@@ -441,7 +441,7 @@ CREATE_FAIL:
 #ifdef CONFIG_ROCKCHIP_RVE_PROC_FS
 static int rve_procfs_open(struct inode *inode, struct file *file)
 {
-	struct rve_debugger_node *node = PDE_DATA(inode);
+	struct rve_debugger_node *node = pde_data(inode);
 
 	return single_open(file, node->info_ent->show, node);
 }

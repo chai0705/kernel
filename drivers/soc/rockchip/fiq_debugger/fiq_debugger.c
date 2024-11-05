@@ -15,7 +15,7 @@
  * GNU General Public License for more details.
  */
 
-#include <stdarg.h>
+#include <linux/stdarg.h>
 #include <linux/module.h>
 #include <linux/io.h>
 #include <linux/console.h>
@@ -261,11 +261,10 @@ static void fiq_debugger_dump_kernel_log(struct fiq_debugger_state *state)
 {
 	char buf[512];
 	size_t len;
-	struct kmsg_dumper dumper = { .active = true };
+	struct kmsg_dump_iter iter;
 
-
-	kmsg_dump_rewind_nolock(&dumper);
-	while (kmsg_dump_get_line_nolock(&dumper, true, buf,
+	kmsg_dump_rewind(&iter);
+	while (kmsg_dump_get_line(&iter, true, buf,
 					 sizeof(buf) - 1, &len)) {
 		buf[len] = 0;
 		fiq_debugger_puts(state, buf);
@@ -319,14 +318,14 @@ static void fiq_debugger_dump_irqs(struct fiq_debugger_state *state)
 			"irqnr       total  since-last   status  name\n");
 	for_each_irq_desc(n, desc) {
 		struct irqaction *act = desc->action;
-		if (!act && !kstat_irqs(n))
+		if (!act && !kstat_irqs_usr(n))
 			continue;
 		fiq_debugger_printf(&state->output, "%5d: %10u %11u %8x  %s\n", n,
-			kstat_irqs(n),
-			kstat_irqs(n) - state->last_irqs[n],
+			kstat_irqs_usr(n),
+			kstat_irqs_usr(n) - state->last_irqs[n],
 			desc->status_use_accessors,
 			(act && act->name) ? act->name : "???");
-		state->last_irqs[n] = kstat_irqs(n);
+		state->last_irqs[n] = kstat_irqs_usr(n);
 	}
 }
 #endif
@@ -342,7 +341,7 @@ static void fiq_debugger_do_ps(struct fiq_debugger_state *state)
 	fiq_debugger_printf(&state->output, "pid   ppid  prio task            pc\n");
 	read_lock(&tasklist_lock);
 	do_each_thread(g, p) {
-		task_state = p->state ? __ffs(p->state) + 1 : 0;
+		task_state = p->__state ? __ffs(p->__state) + 1 : 0;
 		fiq_debugger_printf(&state->output,
 			     "%5d %5d %4d ", p->pid, p->parent->pid, p->prio);
 		fiq_debugger_printf(&state->output, "%-13.13s %c", p->comm,
@@ -1238,7 +1237,7 @@ static int fiq_tty_write(struct tty_struct *tty, const unsigned char *buf, int c
 	return count;
 }
 
-static int fiq_tty_write_room(struct tty_struct *tty)
+static unsigned int fiq_tty_write_room(struct tty_struct *tty)
 {
 #ifdef CONFIG_RK_CONSOLE_THREAD
 	int line = tty->index;
@@ -1376,7 +1375,7 @@ static int fiq_debugger_tty_init(void)
 	return 0;
 
 err_free_tty:
-	put_tty_driver(fiq_tty_driver);
+	tty_driver_kref_put(fiq_tty_driver);
 	fiq_tty_driver = NULL;
 err_free_state:
 	kfree(states);

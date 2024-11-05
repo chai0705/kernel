@@ -14,6 +14,7 @@
  */
 
 #include <linux/ptrace.h>
+#include <linux/version.h>
 #include <asm/stacktrace.h>
 
 #include "fiq_debugger_priv.h"
@@ -187,6 +188,7 @@ void fiq_debugger_dump_stacktrace(struct fiq_debugger_output *output,
 			current->pid, current->comm);
 	fiq_debugger_dump_regs(output, regs);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
 	if (!user_mode(regs)) {
 		struct stackframe frame;
 		frame.fp = regs->regs[29];
@@ -195,5 +197,11 @@ void fiq_debugger_dump_stacktrace(struct fiq_debugger_output *output,
 		output->printf(output, "\n");
 		walk_stackframe(current, &frame, report_trace, &sts);
 	}
+#else
+	if (!user_mode(regs)) {
+		output->printf(output, "\n");
+		arch_stack_walk(report_trace, (void *)&sts, current, (struct pt_regs *)regs);
+	}
+#endif
 }
 #endif

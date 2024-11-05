@@ -7,10 +7,24 @@
 #include "dev.h"
 #include "common.h"
 
+static void rkcif_init_dummy_vb2(struct rkcif_device *dev,
+				struct rkcif_dummy_buffer *buf)
+{
+	unsigned long attrs = buf->is_need_vaddr ? 0 : DMA_ATTR_NO_KERNEL_MAPPING;
+
+	memset(&buf->vb2_queue, 0, sizeof(struct vb2_queue));
+	memset(&buf->vb, 0, sizeof(struct vb2_buffer));
+	buf->vb2_queue.gfp_flags = GFP_KERNEL | GFP_DMA32;
+	buf->vb2_queue.dma_dir = DMA_BIDIRECTIONAL;
+	if (dev->hw_dev->is_dma_contig)
+		attrs |= DMA_ATTR_FORCE_CONTIGUOUS;
+	buf->vb2_queue.dma_attrs = attrs;
+	buf->vb.vb2_queue = &buf->vb2_queue;
+}
+
 int rkcif_alloc_buffer(struct rkcif_device *dev,
 		       struct rkcif_dummy_buffer *buf)
 {
-	unsigned long attrs = buf->is_need_vaddr ? 0 : DMA_ATTR_NO_KERNEL_MAPPING;
 	const struct vb2_mem_ops *g_ops = dev->hw_dev->mem_ops;
 	struct sg_table	 *sg_tbl;
 	void *mem_priv;
@@ -21,11 +35,10 @@ int rkcif_alloc_buffer(struct rkcif_device *dev,
 		goto err;
 	}
 
-	if (dev->hw_dev->is_dma_contig)
-		attrs |= DMA_ATTR_FORCE_CONTIGUOUS;
+	rkcif_init_dummy_vb2(dev, buf);
+
 	buf->size = PAGE_ALIGN(buf->size);
-	mem_priv = g_ops->alloc(dev->hw_dev->dev, attrs, buf->size,
-				DMA_BIDIRECTIONAL, GFP_KERNEL | GFP_DMA32);
+	mem_priv = g_ops->alloc(&buf->vb, dev->hw_dev->dev, buf->size);
 	if (IS_ERR_OR_NULL(mem_priv)) {
 		ret = -ENOMEM;
 		goto err;
@@ -33,16 +46,16 @@ int rkcif_alloc_buffer(struct rkcif_device *dev,
 
 	buf->mem_priv = mem_priv;
 	if (dev->hw_dev->is_dma_sg_ops) {
-		sg_tbl = (struct sg_table *)g_ops->cookie(mem_priv);
+		sg_tbl = (struct sg_table *)g_ops->cookie(&buf->vb, mem_priv);
 		buf->dma_addr = sg_dma_address(sg_tbl->sgl);
 		g_ops->prepare(mem_priv);
 	} else {
-		buf->dma_addr = *((dma_addr_t *)g_ops->cookie(mem_priv));
+		buf->dma_addr = *((dma_addr_t *)g_ops->cookie(&buf->vb, mem_priv));
 	}
 	if (buf->is_need_vaddr)
-		buf->vaddr = g_ops->vaddr(mem_priv);
+		buf->vaddr = g_ops->vaddr(&buf->vb, mem_priv);
 	if (buf->is_need_dbuf) {
-		buf->dbuf = g_ops->get_dmabuf(mem_priv, O_RDWR);
+		buf->dbuf = g_ops->get_dmabuf(&buf->vb, mem_priv, O_RDWR);
 		if (buf->is_need_dmafd) {
 			buf->dma_fd = dma_buf_fd(buf->dbuf, O_CLOEXEC);
 			if (buf->dma_fd < 0) {
@@ -220,16 +233,17 @@ static void rkcif_shm_unmap_dma_buf(struct dma_buf_attachment *attachment,
 	kfree(table);
 }
 
-static void *rkcif_shm_vmap(struct dma_buf *dma_buf)
+static int rkcif_shm_vmap(struct dma_buf *dma_buf, struct iosys_map *map)
 {
 	struct rkcif_shm_data *data = dma_buf->priv;
 
 	data->vaddr = vmap(data->pages, data->npages, VM_MAP, PAGE_KERNEL);
 	data->vmap_cnt++;
-	return data->vaddr;
+	iosys_map_set_vaddr(map, data->vaddr);
+	return 0;
 }
 
-static void rkcif_shm_vunmap(struct dma_buf *dma_buf, void *vaddr)
+static void rkcif_shm_vunmap(struct dma_buf *dma_buf, struct iosys_map *map)
 {
 	struct rkcif_shm_data *data = dma_buf->priv;
 
@@ -283,7 +297,7 @@ static void rkcif_shm_release(struct dma_buf *dma_buf)
 
 	if (data->vmap_cnt) {
 		WARN(1, "%s: buffer still mapped in the kernel\n", __func__);
-		rkcif_shm_vunmap(dma_buf, data->vaddr);
+		rkcif_shm_vunmap(dma_buf, NULL);
 	}
 	kfree(data);
 }
@@ -337,8 +351,12 @@ int rkcif_alloc_reserved_mem_buf(struct rkcif_device *dev, struct rkcif_rx_buffe
 	buf->shmem.shm_start = dummy->dma_addr;
 	buf->shmem.shm_size = dummy->size;
 	dummy->dbuf = rkcif_shm_alloc(&buf->shmem);
-	if (dummy->is_need_vaddr)
-		dummy->vaddr = dummy->dbuf->ops->vmap(dummy->dbuf);
+	if (dummy->is_need_vaddr) {
+		struct iosys_map map;
+
+		dummy->dbuf->ops->vmap(dummy->dbuf, &map);
+		dummy->vaddr = map.vaddr;
+	}
 	return 0;
 }
 
@@ -357,9 +375,9 @@ void rkcif_free_reserved_mem_buf(struct rkcif_device *dev, struct rkcif_rx_buffe
 			  (u32)dummy->dma_addr);
 	if (dev->sditf[0]) {
 		if (dev->sditf[0]->is_combine_mode)
-			pad = media_entity_remote_pad(&dev->sditf[0]->pads[1]);
+			pad = media_pad_remote_pad_first(&dev->sditf[0]->pads[1]);
 		else
-			pad = media_entity_remote_pad(&dev->sditf[0]->pads[0]);
+			pad = media_pad_remote_pad_first(&dev->sditf[0]->pads[0]);
 	} else {
 		v4l2_info(&dev->v4l2_dev,
 			  "not find sditf\n");
@@ -376,7 +394,7 @@ void rkcif_free_reserved_mem_buf(struct rkcif_device *dev, struct rkcif_rx_buffe
 		v4l2_subdev_call(sd, core, ioctl,
 				 RKISP_VICAP_CMD_RX_BUFFER_FREE, &buf->dbufs);
 	if (dummy->is_need_vaddr)
-		dummy->dbuf->ops->vunmap(dummy->dbuf, dummy->vaddr);
+		dummy->dbuf->ops->vunmap(dummy->dbuf, NULL);
 #ifdef CONFIG_VIDEO_ROCKCHIP_THUNDER_BOOT_ISP
 	free_reserved_area(phys_to_virt(buf->shmem.shm_start),
 			   phys_to_virt(buf->shmem.shm_start + buf->shmem.shm_size),

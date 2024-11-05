@@ -36,9 +36,6 @@ properties:
   "#clock-cells":
     const: 0
 
-  "#phy-cells":
-    const: 0
-
   clocks:
     maxItems: 1
 
@@ -58,6 +55,10 @@ properties:
   extcon:
     description:
       Phandle to the extcon device providing the cable state for the otg phy.
+
+  interrupts:
+    description: Muxed interrupt for both ports
+    maxItems: 1
 
   wakeup-source:
     description:
@@ -92,6 +93,7 @@ properties:
 
       interrupts:
         description: host linestate interrupt
+        maxItems: 1
 
       interrupt-names:
         const: linestate
@@ -103,8 +105,6 @@ properties:
 
     required:
       - "#phy-cells"
-      - interrupts
-      - interrupt-names
 
   otg-port:
     type: object
@@ -172,17 +172,48 @@ properties:
 
     required:
       - "#phy-cells"
-      - interrupts
-      - interrupt-names
 
 required:
   - compatible
   - reg
   - clock-output-names
   - "#clock-cells"
-  - "#phy-cells"
   - host-port
   - otg-port
+
+allOf:
+  - if:
+      properties:
+        compatible:
+          contains:
+            const: rockchip,rk3568-usb2phy
+
+    then:
+      properties:
+        host-port:
+          properties:
+            interrupts: false
+
+        otg-port:
+          properties:
+            interrupts: false
+
+      required:
+        - interrupts
+
+    else:
+      properties:
+        interrupts: false
+
+        host-port:
+          required:
+            - interrupts
+            - interrupt-names
+
+        otg-port:
+          required:
+            - interrupts
+            - interrupt-names
 
 additionalProperties: false
 
@@ -191,26 +222,25 @@ examples:
     #include <dt-bindings/clock/rk3399-cru.h>
     #include <dt-bindings/interrupt-controller/arm-gic.h>
     #include <dt-bindings/interrupt-controller/irq.h>
-    u2phy0: usb2-phy@e450 {
+    u2phy0: usb2phy@e450 {
       compatible = "rockchip,rk3399-usb2phy";
       reg = <0xe450 0x10>;
       clocks = <&cru SCLK_USB2PHY0_REF>;
       clock-names = "phyclk";
       clock-output-names = "clk_usbphy0_480m";
       #clock-cells = <0>;
-      #phy-cells = <0>;
 
       u2phy0_host: host-port {
-        #phy-cells = <0>;
         interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH 0>;
         interrupt-names = "linestate";
+        #phy-cells = <0>;
       };
 
       u2phy0_otg: otg-port {
-        #phy-cells = <0>;
         interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH 0>,
                      <GIC_SPI 104 IRQ_TYPE_LEVEL_HIGH 0>,
                      <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH 0>;
         interrupt-names = "otg-bvalid", "otg-id", "linestate";
+        #phy-cells = <0>;
       };
     };

@@ -7590,7 +7590,7 @@ static const struct ov2718_mode supported_modes[] = {
 		.vts_def = 0x0466,
 		.hdr_mode = NO_HDR,
 		.reg_list = ov2718_linear12bit_init_tab_1920_1080,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR12_1X12,
@@ -7605,10 +7605,10 @@ static const struct ov2718_mode supported_modes[] = {
 		.vts_def = 0x0466,
 		.hdr_mode = HDR_X2,
 		.reg_list = ov2718_hdr12bit_init_tab_1920_1080,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
@@ -7623,7 +7623,7 @@ static const struct ov2718_mode supported_modes[] = {
 		.vts_def = 0x0466,
 		.hdr_mode = NO_HDR,
 		.reg_list = ov2718_linear10bit_init_tab_1920_1080,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
@@ -7638,10 +7638,10 @@ static const struct ov2718_mode supported_modes[] = {
 		.vts_def = 0x0466,
 		.hdr_mode = HDR_X2,
 		.reg_list = ov2718_hdr10bit_init_tab_1920_1080,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,
 	}
 };
 
@@ -7788,7 +7788,7 @@ ov2718_find_best_fit(struct v4l2_subdev *sd,
 }
 
 static int ov2718_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -7804,7 +7804,7 @@ static int ov2718_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov2718->mutex);
 		return -ENOTTY;
@@ -7832,7 +7832,7 @@ static int ov2718_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov2718_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -7841,7 +7841,7 @@ static int ov2718_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov2718->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov2718->mutex);
 		return -ENOTTY;
@@ -7862,7 +7862,7 @@ static int ov2718_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov2718_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -7875,7 +7875,7 @@ static int ov2718_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov2718_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -7991,22 +7991,8 @@ static void ov2718_get_hcg_reg(u32 gain, u32 *again_reg, u32 *dgain_reg)
 static int ov2718_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct ov2718 *ov2718 = to_ov2718(sd);
-	const struct ov2718_mode *mode = ov2718->cur_mode;
-	u32 val = 0;
-
-	if (mode->hdr_mode == NO_HDR)
-		val = 1 << (OV2718_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	if (mode->hdr_mode == HDR_X2)
-		val = 1 << (OV2718_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK |
-		V4L2_MBUS_CSI2_CHANNEL_1;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = OV2718_LANES;
 
 	return 0;
 }
@@ -8513,7 +8499,7 @@ static int ov2718_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(sd, fh->pad, 0);
+			v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov2718_mode *def_mode = &ov2718->support_modes[0];
 
 	mutex_lock(&ov2718->mutex);
@@ -8531,7 +8517,7 @@ static int ov2718_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int ov2718_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -8983,7 +8969,7 @@ static int ov2718_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ov2718->module_index, facing,
 		 OV2718_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -9009,7 +8995,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov2718_remove(struct i2c_client *client)
+static void ov2718_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov2718 *ov2718 = to_ov2718(sd);
@@ -9025,8 +9011,6 @@ static int ov2718_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov2718_power_off(ov2718);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

@@ -706,9 +706,6 @@ static int rockchip_spi_slave_do_one_msg(struct spi_controller *ctlr, struct spi
 			memcpy(xfer->rx_buf, rs->dma_buf, xfer->len);
 
 		m->actual_length += xfer->len;
-
-		if (xfer->delay_usecs)
-			udelay(xfer->delay_usecs);
 	}
 
 out:

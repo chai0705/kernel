@@ -190,7 +190,7 @@ static int cyttsp5_spi_probe(struct spi_device *spi)
 	return rc;
 }
 
-static int cyttsp5_spi_remove(struct spi_device *spi)
+static void cyttsp5_spi_remove(struct spi_device *spi)
 {
 #ifdef CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP5_DEVICETREE_SUPPORT
 	struct device *dev = &spi->dev;
@@ -205,8 +205,6 @@ static int cyttsp5_spi_remove(struct spi_device *spi)
 	if (match)
 		cyttsp5_devtree_clean_pdata(dev);
 #endif
-
-	return 0;
 }
 
 static const struct spi_device_id cyttsp5_spi_id[] = {

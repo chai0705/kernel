@@ -481,8 +481,6 @@ static inline void free_ep_fback(struct uac_rtd_params *prm, struct usb_ep *ep)
 	if (!prm->fb_ep_enabled)
 		return;
 
-	prm->fb_ep_enabled = false;
-
 	if (prm->req_fback) {
 		if (usb_ep_dequeue(ep, prm->req_fback)) {
 			kfree(prm->req_fback->buf);
@@ -490,6 +488,8 @@ static inline void free_ep_fback(struct uac_rtd_params *prm, struct usb_ep *ep)
 		}
 		prm->req_fback = NULL;
 	}
+
+	prm->fb_ep_enabled = false;
 
 	if (usb_ep_disable(ep))
 		dev_err(uac->card->dev, "%s:%d Error!\n", __func__, __LINE__);
@@ -1284,6 +1284,7 @@ static void g_audio_work(struct work_struct *data)
 			uac_event[0] = "USB_STATE=SET_AUDIO_CLK";
 			snprintf(str, sizeof(str), "PPM=%d", audio->params.ppm);
 			uac_event[1] = str;
+			break;
 		default:
 			break;
 		}
@@ -1430,8 +1431,8 @@ int g_audio_setup(struct g_audio *g_audio, const char *pcm_name,
 	if (c_chmask) {
 		struct uac_rtd_params *prm = &uac->c_prm;
 
-    spin_lock_init(&prm->lock);
-    uac->c_prm.uac = uac;
+		spin_lock_init(&prm->lock);
+		uac->c_prm.uac = uac;
 		prm->max_psize = g_audio->out_ep_maxpsize;
 		prm->srate = params->c_srates[0];
 

@@ -1061,7 +1061,7 @@ static const struct gc08a3_mode supported_modes_4lane[] = {
 		.reg_list = gc08a3_3264x2448_regs_4lane,
 		.global_reg_list = gc08a3_global_regs_4lane,
 		.mipi_freq_idx = 1,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 1280,
@@ -1076,7 +1076,7 @@ static const struct gc08a3_mode supported_modes_4lane[] = {
 		.reg_list = gc08a3_1280x800_regs_4lane,
 		.global_reg_list = gc08a3_global_regs_4lane,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 1280,
@@ -1091,7 +1091,7 @@ static const struct gc08a3_mode supported_modes_4lane[] = {
 		.reg_list = gc08a3_1280x720_regs_4lane,
 		.global_reg_list = gc08a3_global_regs_4lane,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -1199,7 +1199,7 @@ gc08a3_find_best_fit(struct gc08a3 *gc08a3,
 }
 
 static int gc08a3_set_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
@@ -1215,7 +1215,7 @@ static int gc08a3_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&gc08a3->mutex);
 		return -ENOTTY;
@@ -1241,7 +1241,7 @@ static int gc08a3_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc08a3_get_fmt(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_format *fmt)
 {
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
@@ -1250,7 +1250,7 @@ static int gc08a3_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&gc08a3->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&gc08a3->mutex);
 		return -ENOTTY;
@@ -1267,7 +1267,7 @@ static int gc08a3_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int gc08a3_enum_mbus_code(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -1278,7 +1278,7 @@ static int gc08a3_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int gc08a3_enum_frame_sizes(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
@@ -1672,7 +1672,7 @@ static int gc08a3_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-			v4l2_subdev_get_try_format(sd, fh->pad, 0);
+			v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct gc08a3_mode *def_mode = &gc08a3->support_modes[0];
 
 	mutex_lock(&gc08a3->mutex);
@@ -1690,7 +1690,7 @@ static int gc08a3_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int gc08a3_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
@@ -1713,16 +1713,9 @@ static int gc08a3_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 
 	dev_info(dev, "%s(%d) enter!\n", __func__, __LINE__);
 
-	if (2 == sensor->lane_num) {
+	if (2 == sensor->lane_num || 4 == sensor->lane_num) {
 		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_2_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	} else if (4 == sensor->lane_num) {
-		config->type = V4L2_MBUS_CSI2_DPHY;
-		config->flags = V4L2_MBUS_CSI2_4_LANE |
-				V4L2_MBUS_CSI2_CHANNEL_0 |
-				V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
+		config->bus.mipi_csi2.num_data_lanes = sensor->lane_num;
 	} else {
 		dev_err(&sensor->client->dev,
 			"unsupported lane_num(%d)\n", sensor->lane_num);
@@ -2120,7 +2113,7 @@ static int gc08a3_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 gc08a3->module_index, facing,
 		 GC08A3_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2146,7 +2139,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int gc08a3_remove(struct i2c_client *client)
+static void gc08a3_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct gc08a3 *gc08a3 = to_gc08a3(sd);
@@ -2162,8 +2155,6 @@ static int gc08a3_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__gc08a3_power_off(gc08a3);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

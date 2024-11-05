@@ -141,7 +141,7 @@ static int rkflash_blk_proc_show(struct seq_file *m, void *v)
 
 static int rkflash_blk_proc_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, rkflash_blk_proc_show, PDE_DATA(inode));
+	return single_open(file, rkflash_blk_proc_show, pde_data(inode));
 }
 
 static const struct proc_ops rkflash_blk_proc_fops = {

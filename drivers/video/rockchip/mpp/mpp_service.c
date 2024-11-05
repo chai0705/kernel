@@ -36,6 +36,7 @@
 #define HAS_VEPU22	IS_ENABLED(CONFIG_ROCKCHIP_MPP_VEPU22)
 #define HAS_IEP2	IS_ENABLED(CONFIG_ROCKCHIP_MPP_IEP2)
 #define HAS_JPGDEC	IS_ENABLED(CONFIG_ROCKCHIP_MPP_JPGDEC)
+#define HAS_JPGENC	IS_ENABLED(CONFIG_ROCKCHIP_MPP_JPGENC)
 #define HAS_RKVDEC2	IS_ENABLED(CONFIG_ROCKCHIP_MPP_RKVDEC2)
 #define HAS_RKVENC2	IS_ENABLED(CONFIG_ROCKCHIP_MPP_RKVENC2)
 #define HAS_AV1DEC	IS_ENABLED(CONFIG_ROCKCHIP_MPP_AV1DEC)
@@ -99,10 +100,7 @@ static int mpp_add_driver(struct mpp_service *srv,
 		     &srv->grf_infos[type],
 		     grf_name);
 
-	if (IS_ENABLED(CONFIG_ROCKCHIP_MPP_AV1DEC) && type == MPP_DRIVER_AV1DEC)
-		ret = av1dec_driver_register(driver);
-	else
-		ret = platform_driver_register(driver);
+	ret = platform_driver_register(driver);
 	if (ret)
 		return ret;
 
@@ -114,12 +112,8 @@ static int mpp_add_driver(struct mpp_service *srv,
 static int mpp_remove_driver(struct mpp_service *srv, int i)
 {
 	if (srv && srv->sub_drivers[i]) {
-		if (i != MPP_DRIVER_AV1DEC) {
-			mpp_set_grf(&srv->grf_infos[i]);
-			platform_driver_unregister(srv->sub_drivers[i]);
-		} else if (IS_ENABLED(CONFIG_ROCKCHIP_MPP_AV1DEC)) {
-			av1dec_driver_unregister(srv->sub_drivers[i]);
-		}
+		mpp_set_grf(&srv->grf_infos[i]);
+		platform_driver_unregister(srv->sub_drivers[i]);
 		srv->sub_drivers[i] = NULL;
 	}
 
@@ -386,7 +380,7 @@ static int mpp_service_probe(struct platform_device *pdev)
 
 		kthread_init_worker(&queue->worker);
 		queue->kworker_task = kthread_run(kthread_worker_fn, &queue->worker,
-						  "queue_work%d", i);
+						  "mpp_worker_%d", i);
 		srv->task_queues[i] = queue;
 	}
 
@@ -431,6 +425,7 @@ static int mpp_service_probe(struct platform_device *pdev)
 	MPP_REGISTER_DRIVER(srv, HAS_VEPU22, VEPU22, vepu22);
 	MPP_REGISTER_DRIVER(srv, HAS_IEP2, IEP2, iep2);
 	MPP_REGISTER_DRIVER(srv, HAS_JPGDEC, JPGDEC, jpgdec);
+	MPP_REGISTER_DRIVER(srv, HAS_JPGENC, JPGENC, jpgenc);
 	MPP_REGISTER_DRIVER(srv, HAS_RKVDEC2, RKVDEC2, rkvdec2);
 	MPP_REGISTER_DRIVER(srv, HAS_RKVENC2, RKVENC2, rkvenc2);
 	MPP_REGISTER_DRIVER(srv, HAS_AV1DEC, AV1DEC, av1dec);
@@ -493,6 +488,7 @@ static struct platform_driver mpp_service_driver = {
 
 module_platform_driver(mpp_service_driver);
 
+MODULE_IMPORT_NS(DMA_BUF);
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_VERSION(MPP_VERSION);
 MODULE_AUTHOR("Ding Wei leo.ding@rock-chips.com");

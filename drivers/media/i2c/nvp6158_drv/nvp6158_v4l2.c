@@ -522,7 +522,7 @@ exit:
  * to the alignment rules.
  */
 static int nvp6158_get_selection(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_selection *sel)
 {
 	struct nvp6158 *nvp6158 = to_nvp6158(sd);
@@ -652,7 +652,7 @@ unlock:
 }
 
 static int nvp6158_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct nvp6158 *nvp6158 = to_nvp6158(sd);
@@ -670,7 +670,7 @@ static int nvp6158_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int nvp6158_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index >= ARRAY_SIZE(nvp6158_formats))
@@ -682,7 +682,7 @@ static int nvp6158_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int nvp6158_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -808,18 +808,18 @@ static int nvp6158_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 
 	cfg->type = V4L2_MBUS_BT656;
 	if (nvp6158->dual_edge == 1) {
-		cfg->flags = RKMODULE_CAMERA_BT656_CHANNELS |
+		cfg->bus.parallel.flags = RKMODULE_CAMERA_BT656_CHANNELS |
 			V4L2_MBUS_PCLK_SAMPLE_RISING |
 			V4L2_MBUS_PCLK_SAMPLE_FALLING;
 	} else {
-		cfg->flags = RKMODULE_CAMERA_BT656_CHANNELS |
+		cfg->bus.parallel.flags = RKMODULE_CAMERA_BT656_CHANNELS |
 			V4L2_MBUS_PCLK_SAMPLE_RISING;
 	}
 	return 0;
 }
 
 static int nvp6158_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -829,7 +829,7 @@ static int nvp6158_get_fmt(struct v4l2_subdev *sd,
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
 		struct v4l2_mbus_framefmt *mf;
 
-		mf = v4l2_subdev_get_try_format(sd, cfg, 0);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, 0);
 		mutex_lock(&nvp6158->mutex);
 		fmt->format = *mf;
 		mutex_unlock(&nvp6158->mutex);
@@ -879,7 +879,7 @@ static void __nvp6158_try_frame_size(struct v4l2_mbus_framefmt *mf,
 }
 
 static int nvp6158_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	int index = ARRAY_SIZE(nvp6158_formats);
@@ -905,7 +905,7 @@ static int nvp6158_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		mf = v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		mf = v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 		*mf = fmt->format;
 #else
 		return -ENOTTY;
@@ -1494,7 +1494,7 @@ static int nvp6158_probe(struct i2c_client *client,
 		 nvp6158->module_index, facing,
 		 NVP6158_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1531,7 +1531,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int nvp6158_remove(struct i2c_client *client)
+static void nvp6158_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct nvp6158 *nvp6158 = to_nvp6158(sd);
@@ -1548,7 +1548,6 @@ static int nvp6158_remove(struct i2c_client *client)
 	if (nvp6158->plug_state_check.state_check_wq != NULL)
 		destroy_workqueue(nvp6158->plug_state_check.state_check_wq);
 #endif
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

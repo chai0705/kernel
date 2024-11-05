@@ -310,9 +310,9 @@ static int angle_lis3dh_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &angle_lis3dh_ops);
 }
 
-static int angle_lis3dh_remove(struct i2c_client *client)
+static void angle_lis3dh_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &angle_lis3dh_ops);
+	sensor_unregister_device(client, NULL, &angle_lis3dh_ops);
 }
 
 static const struct i2c_device_id angle_lis3dh_id[] = {
@@ -322,7 +322,7 @@ static const struct i2c_device_id angle_lis3dh_id[] = {
 
 static struct i2c_driver angle_lis3dh_driver = {
 	.probe = angle_lis3dh_probe,
-	.remove = angle_lis3dh_remove,
+	.remove = (void *)angle_lis3dh_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = angle_lis3dh_id,
 	.driver = {

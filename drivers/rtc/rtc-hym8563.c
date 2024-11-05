@@ -443,10 +443,9 @@ static irqreturn_t hym8563_irq(int irq, void *dev_id)
 {
 	struct hym8563 *hym8563 = (struct hym8563 *)dev_id;
 	struct i2c_client *client = hym8563->client;
-	struct mutex *lock = &hym8563->rtc->ops_lock;
 	int data, ret;
 
-	mutex_lock(lock);
+	rtc_lock(hym8563->rtc);
 
 	/* Clear the alarm flag */
 
@@ -466,7 +465,7 @@ static irqreturn_t hym8563_irq(int irq, void *dev_id)
 	}
 
 out:
-	mutex_unlock(lock);
+	rtc_unlock(hym8563->rtc);
 	return IRQ_HANDLED;
 }
 
@@ -529,8 +528,7 @@ static int hym8563_resume(struct device *dev)
 
 static SIMPLE_DEV_PM_OPS(hym8563_pm_ops, hym8563_suspend, hym8563_resume);
 
-static int hym8563_probe(struct i2c_client *client,
-			 const struct i2c_device_id *id)
+static int hym8563_probe(struct i2c_client *client)
 {
 	struct hym8563 *hym8563;
 	int ret;
@@ -551,6 +549,10 @@ static int hym8563_probe(struct i2c_client *client,
 	hym8563 = devm_kzalloc(&client->dev, sizeof(*hym8563), GFP_KERNEL);
 	if (!hym8563)
 		return -ENOMEM;
+
+	hym8563->rtc = devm_rtc_allocate_device(&client->dev);
+	if (IS_ERR(hym8563->rtc))
+		return PTR_ERR(hym8563->rtc);
 
 	hym8563->client = client;
 	i2c_set_clientdata(client, hym8563);
@@ -591,19 +593,15 @@ static int hym8563_probe(struct i2c_client *client,
 	    (tm_read.tm_mon == -1) || (rtc_valid_tm(&tm_read) != 0))
 		hym8563_rtc_set_time(&client->dev, &tm);
 
-	hym8563->rtc = devm_rtc_device_register(&client->dev, client->name,
-						&hym8563_rtc_ops, THIS_MODULE);
-	if (IS_ERR(hym8563->rtc))
-		return PTR_ERR(hym8563->rtc);
-
-	/* the hym8563 alarm only supports a minute accuracy */
-	hym8563->rtc->uie_unsupported = 1;
+	hym8563->rtc->ops = &hym8563_rtc_ops;
+	set_bit(RTC_FEATURE_ALARM_RES_MINUTE, hym8563->rtc->features);
+	clear_bit(RTC_FEATURE_UPDATE_INTERRUPT, hym8563->rtc->features);
 
 #ifdef CONFIG_COMMON_CLK
 	hym8563_clkout_register_clk(hym8563);
 #endif
 
-	return 0;
+	return devm_rtc_register_device(hym8563->rtc);
 }
 
 static const struct i2c_device_id hym8563_id[] = {
@@ -624,7 +622,7 @@ static struct i2c_driver hym8563_driver = {
 		.pm	= &hym8563_pm_ops,
 		.of_match_table	= hym8563_dt_idtable,
 	},
-	.probe		= hym8563_probe,
+	.probe_new	= hym8563_probe,
 	.id_table	= hym8563_id,
 };
 

@@ -558,10 +558,10 @@ static void dw_mipi_dsi_video_mode_config(struct dw_mipi_dsi *dsi)
 	u32 val = LP_VSA_EN | LP_VBP_EN | LP_VFP_EN |
 		  LP_VACT_EN | LP_HBP_EN | LP_HFP_EN;
 
-	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HFP)
+	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HFP)
 		val &= ~LP_HFP_EN;
 
-	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HBP)
+	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_NO_HBP)
 		val &= ~LP_HBP_EN;
 
 	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_BURST)
@@ -736,9 +736,9 @@ static void dw_mipi_dsi_line_timer_config(struct dw_mipi_dsi *dsi,
 {
 	u32 htotal, hsa, hbp, lbcc;
 
-	htotal = mode->htotal;
-	hsa = mode->hsync_end - mode->hsync_start;
-	hbp = mode->htotal - mode->hsync_end;
+	htotal = mode->crtc_htotal;
+	hsa = mode->crtc_hsync_end - mode->crtc_hsync_start;
+	hbp = mode->crtc_htotal - mode->crtc_hsync_end;
 
 	/*
 	 * TODO dw drv improvements
@@ -873,7 +873,8 @@ static void dw_mipi_dsi_post_disable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_post_disable(dsi->slave);
 }
 
-static void dw_mipi_dsi_bridge_post_disable(struct drm_bridge *bridge)
+static void dw_mipi_dsi_bridge_post_atomic_disable(struct drm_bridge *bridge,
+						   struct drm_bridge_state *old_bridge_state)
 {
 	struct dw_mipi_dsi *dsi = bridge_to_dsi(bridge);
 	const struct dw_mipi_dsi_plat_data *pdata = dsi->plat_data;
@@ -887,7 +888,8 @@ static void dw_mipi_dsi_bridge_post_disable(struct drm_bridge *bridge)
 		pdata->stream_standby(pdata->priv_data, 0);
 }
 
-static void dw_mipi_dsi_bridge_disable(struct drm_bridge *bridge)
+static void dw_mipi_dsi_bridge_atomic_disable(struct drm_bridge *bridge,
+					      struct drm_bridge_state *old_bridge_state)
 {
 	struct dw_mipi_dsi *dsi = bridge_to_dsi(bridge);
 	const struct dw_mipi_dsi_plat_data *pdata = dsi->plat_data;
@@ -980,7 +982,8 @@ static void dw_mipi_dsi_pre_enable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_pre_enable(dsi->slave);
 }
 
-static void dw_mipi_dsi_bridge_pre_enable(struct drm_bridge *bridge)
+static void dw_mipi_dsi_bridge_atomic_pre_enable(struct drm_bridge *bridge,
+						 struct drm_bridge_state *old_bridge_state)
 {
 	struct dw_mipi_dsi *dsi = bridge_to_dsi(bridge);
 	const struct dw_mipi_dsi_plat_data *pdata = dsi->plat_data;
@@ -1015,7 +1018,8 @@ static void dw_mipi_dsi_enable(struct dw_mipi_dsi *dsi)
 		dw_mipi_dsi_enable(dsi->slave);
 }
 
-static void dw_mipi_dsi_bridge_enable(struct drm_bridge *bridge)
+static void dw_mipi_dsi_bridge_atomic_enable(struct drm_bridge *bridge,
+					     struct drm_bridge_state *old_bridge_state)
 {
 	struct dw_mipi_dsi *dsi = bridge_to_dsi(bridge);
 	const struct dw_mipi_dsi_plat_data *pdata = dsi->plat_data;
@@ -1042,7 +1046,10 @@ dw_mipi_dsi_bridge_mode_valid(struct drm_bridge *bridge,
 	enum drm_mode_status mode_status = MODE_OK;
 
 	if (pdata->mode_valid)
-		mode_status = pdata->mode_valid(pdata->priv_data, mode);
+		mode_status = pdata->mode_valid(pdata->priv_data, mode,
+						dsi->mode_flags,
+						dw_mipi_dsi_get_lanes(dsi),
+						dsi->format);
 
 	return mode_status;
 }
@@ -1069,13 +1076,16 @@ static int dw_mipi_dsi_bridge_attach(struct drm_bridge *bridge,
 }
 
 static const struct drm_bridge_funcs dw_mipi_dsi_bridge_funcs = {
-	.mode_set     = dw_mipi_dsi_bridge_mode_set,
-	.pre_enable   = dw_mipi_dsi_bridge_pre_enable,
-	.enable	      = dw_mipi_dsi_bridge_enable,
-	.post_disable = dw_mipi_dsi_bridge_post_disable,
-	.disable      = dw_mipi_dsi_bridge_disable,
-	.mode_valid   = dw_mipi_dsi_bridge_mode_valid,
-	.attach	      = dw_mipi_dsi_bridge_attach,
+	.atomic_duplicate_state	= drm_atomic_helper_bridge_duplicate_state,
+	.atomic_destroy_state	= drm_atomic_helper_bridge_destroy_state,
+	.atomic_reset		= drm_atomic_helper_bridge_reset,
+	.atomic_pre_enable	= dw_mipi_dsi_bridge_atomic_pre_enable,
+	.atomic_enable		= dw_mipi_dsi_bridge_atomic_enable,
+	.atomic_post_disable	= dw_mipi_dsi_bridge_post_atomic_disable,
+	.atomic_disable		= dw_mipi_dsi_bridge_atomic_disable,
+	.mode_set		= dw_mipi_dsi_bridge_mode_set,
+	.mode_valid		= dw_mipi_dsi_bridge_mode_valid,
+	.attach			= dw_mipi_dsi_bridge_attach,
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -1169,6 +1179,7 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 		    const struct dw_mipi_dsi_plat_data *plat_data)
 {
 	struct device *dev = &pdev->dev;
+	struct reset_control *apb_rst;
 	struct dw_mipi_dsi *dsi;
 	int ret;
 
@@ -1198,15 +1209,16 @@ __dw_mipi_dsi_probe(struct platform_device *pdev,
 	 * Note that the reset was not defined in the initial device tree, so
 	 * we have to be prepared for it not being found.
 	 */
-	dsi->apb_rst = devm_reset_control_get_optional_exclusive(dev, "apb");
-	if (IS_ERR(dsi->apb_rst)) {
-		ret = PTR_ERR(dsi->apb_rst);
+	apb_rst = devm_reset_control_get_optional_exclusive(dev, "apb");
+	if (IS_ERR(apb_rst)) {
+		ret = PTR_ERR(apb_rst);
 
 		if (ret != -EPROBE_DEFER)
 			dev_err(dev, "Unable to get reset control: %d\n", ret);
 
 		return ERR_PTR(ret);
 	}
+	dsi->apb_rst = apb_rst;
 
 	dw_mipi_dsi_debugfs_init(dsi);
 	pm_runtime_enable(dev);

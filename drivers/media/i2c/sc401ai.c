@@ -426,7 +426,7 @@ static const struct sc401ai_mode supported_modes[] = {
 		.reg_list = sc401ai_linear_10_2560x1440_4lane_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.width = 2560,
@@ -442,7 +442,7 @@ static const struct sc401ai_mode supported_modes[] = {
 		.reg_list = sc401ai_linear_10_2560x1440_2lane_regs,
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 1,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -683,7 +683,7 @@ sc401ai_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int sc401ai_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc401ai *sc401ai = to_sc401ai(sd);
@@ -699,7 +699,7 @@ static int sc401ai_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc401ai->mutex);
 		return -ENOTTY;
@@ -723,7 +723,7 @@ static int sc401ai_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc401ai_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc401ai *sc401ai = to_sc401ai(sd);
@@ -732,7 +732,7 @@ static int sc401ai_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc401ai->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc401ai->mutex);
 		return -ENOTTY;
@@ -754,7 +754,7 @@ static int sc401ai_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc401ai_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc401ai *sc401ai = to_sc401ai(sd);
@@ -767,7 +767,7 @@ static int sc401ai_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc401ai_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -819,20 +819,9 @@ static int sc401ai_g_mbus_config(struct v4l2_subdev *sd,
 				struct v4l2_mbus_config *config)
 {
 	struct sc401ai *sc401ai = to_sc401ai(sd);
-	const struct sc401ai_mode *mode = sc401ai->cur_mode;
-	u32 val = 0;
-
-	val = 1 << (sc401ai->lane_num - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = sc401ai->lane_num;
 
 	return 0;
 }
@@ -1228,7 +1217,7 @@ static int sc401ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc401ai *sc401ai = to_sc401ai(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc401ai_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc401ai->mutex);
@@ -1246,7 +1235,7 @@ static int sc401ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc401ai_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1691,7 +1680,7 @@ static int sc401ai_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 sc401ai->module_index, facing,
 		 SC401AI_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1720,7 +1709,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc401ai_remove(struct i2c_client *client)
+static void sc401ai_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc401ai *sc401ai = to_sc401ai(sd);
@@ -1736,8 +1725,6 @@ static int sc401ai_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc401ai_power_off(sc401ai);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

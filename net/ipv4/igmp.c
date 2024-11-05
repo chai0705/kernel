@@ -213,16 +213,18 @@ static void igmp_stop_timer(struct ip_mc_list *im)
 /* It must be called with locked im->lock */
 static void igmp_start_timer(struct ip_mc_list *im, int max_delay)
 {
-	int tv = prandom_u32() % max_delay;
+	int tv = prandom_u32_max(max_delay);
 
 	im->tm_running = 1;
-	if (!mod_timer(&im->timer, jiffies+tv+2))
-		refcount_inc(&im->refcnt);
+	if (refcount_inc_not_zero(&im->refcnt)) {
+		if (mod_timer(&im->timer, jiffies + tv + 2))
+			ip_ma_put(im);
+	}
 }
 
 static void igmp_gq_start_timer(struct in_device *in_dev)
 {
-	int tv = prandom_u32() % in_dev->mr_maxdelay;
+	int tv = prandom_u32_max(in_dev->mr_maxdelay);
 	unsigned long exp = jiffies + tv + 2;
 
 	if (in_dev->mr_gq_running &&
@@ -236,7 +238,7 @@ static void igmp_gq_start_timer(struct in_device *in_dev)
 
 static void igmp_ifc_start_timer(struct in_device *in_dev, int delay)
 {
-	int tv = prandom_u32() % delay;
+	int tv = prandom_u32_max(delay);
 
 	if (!mod_timer(&in_dev->mr_ifc_timer, jiffies+tv+2))
 		in_dev_hold(in_dev);
@@ -806,10 +808,17 @@ static void igmp_gq_timer_expire(struct timer_list *t)
 static void igmp_ifc_timer_expire(struct timer_list *t)
 {
 	struct in_device *in_dev = from_timer(in_dev, t, mr_ifc_timer);
+	u32 mr_ifc_count;
 
 	igmpv3_send_cr(in_dev);
-	if (in_dev->mr_ifc_count) {
-		in_dev->mr_ifc_count--;
+restart:
+	mr_ifc_count = READ_ONCE(in_dev->mr_ifc_count);
+
+	if (mr_ifc_count) {
+		if (cmpxchg(&in_dev->mr_ifc_count,
+			    mr_ifc_count,
+			    mr_ifc_count - 1) != mr_ifc_count)
+			goto restart;
 		igmp_ifc_start_timer(in_dev,
 				     unsolicited_report_interval(in_dev));
 	}
@@ -821,7 +830,7 @@ static void igmp_ifc_event(struct in_device *in_dev)
 	struct net *net = dev_net(in_dev->dev);
 	if (IGMP_V1_SEEN(in_dev) || IGMP_V2_SEEN(in_dev))
 		return;
-	in_dev->mr_ifc_count = in_dev->mr_qrv ?: READ_ONCE(net->ipv4.sysctl_igmp_qrv);
+	WRITE_ONCE(in_dev->mr_ifc_count, in_dev->mr_qrv ?: READ_ONCE(net->ipv4.sysctl_igmp_qrv));
 	igmp_ifc_start_timer(in_dev, 1);
 }
 
@@ -961,7 +970,7 @@ static bool igmp_heard_query(struct in_device *in_dev, struct sk_buff *skb,
 				in_dev->mr_qri;
 		}
 		/* cancel the interface change timer */
-		in_dev->mr_ifc_count = 0;
+		WRITE_ONCE(in_dev->mr_ifc_count, 0);
 		if (del_timer(&in_dev->mr_ifc_timer))
 			__in_dev_put(in_dev);
 		/* clear deleted report items */
@@ -1732,7 +1741,7 @@ void ip_mc_down(struct in_device *in_dev)
 		igmp_group_dropped(pmc);
 
 #ifdef CONFIG_IP_MULTICAST
-	in_dev->mr_ifc_count = 0;
+	WRITE_ONCE(in_dev->mr_ifc_count, 0);
 	if (del_timer(&in_dev->mr_ifc_timer))
 		__in_dev_put(in_dev);
 	in_dev->mr_gq_running = 0;
@@ -1949,7 +1958,7 @@ static int ip_mc_del_src(struct in_device *in_dev, __be32 *pmca, int sfmode,
 		pmc->sfmode = MCAST_INCLUDE;
 #ifdef CONFIG_IP_MULTICAST
 		pmc->crcount = in_dev->mr_qrv ?: READ_ONCE(net->ipv4.sysctl_igmp_qrv);
-		in_dev->mr_ifc_count = pmc->crcount;
+		WRITE_ONCE(in_dev->mr_ifc_count, pmc->crcount);
 		for (psf = pmc->sources; psf; psf = psf->sf_next)
 			psf->sf_crcount = 0;
 		igmp_ifc_event(pmc->interface);
@@ -2128,7 +2137,7 @@ static int ip_mc_add_src(struct in_device *in_dev, __be32 *pmca, int sfmode,
 		/* else no filters; keep old mode for reports */
 
 		pmc->crcount = in_dev->mr_qrv ?: READ_ONCE(net->ipv4.sysctl_igmp_qrv);
-		in_dev->mr_ifc_count = pmc->crcount;
+		WRITE_ONCE(in_dev->mr_ifc_count, pmc->crcount);
 		for (psf = pmc->sources; psf; psf = psf->sf_next)
 			psf->sf_crcount = 0;
 		igmp_ifc_event(in_dev);
@@ -2241,7 +2250,7 @@ static int ip_mc_leave_src(struct sock *sk, struct ip_mc_socklist *iml,
 			iml->sfmode, psf->sl_count, psf->sl_addr, 0);
 	RCU_INIT_POINTER(iml->sflist, NULL);
 	/* decrease mem now to avoid the memleak warning */
-	atomic_sub(IP_SFLSIZE(psf->sl_max), &sk->sk_omem_alloc);
+	atomic_sub(struct_size(psf, sl_addr, psf->sl_max), &sk->sk_omem_alloc);
 	kfree_rcu(psf, rcu);
 	return err;
 }
@@ -2390,7 +2399,8 @@ int ip_mc_source(int add, int omode, struct sock *sk, struct
 
 		if (psl)
 			count += psl->sl_max;
-		newpsl = sock_kmalloc(sk, IP_SFLSIZE(count), GFP_KERNEL);
+		newpsl = sock_kmalloc(sk, struct_size(newpsl, sl_addr, count),
+				      GFP_KERNEL);
 		if (!newpsl) {
 			err = -ENOBUFS;
 			goto done;
@@ -2401,7 +2411,8 @@ int ip_mc_source(int add, int omode, struct sock *sk, struct
 			for (i = 0; i < psl->sl_count; i++)
 				newpsl->sl_addr[i] = psl->sl_addr[i];
 			/* decrease mem now to avoid the memleak warning */
-			atomic_sub(IP_SFLSIZE(psl->sl_max), &sk->sk_omem_alloc);
+			atomic_sub(struct_size(psl, sl_addr, psl->sl_max),
+				   &sk->sk_omem_alloc);
 		}
 		rcu_assign_pointer(pmc->sflist, newpsl);
 		if (psl)
@@ -2477,19 +2488,22 @@ int ip_mc_msfilter(struct sock *sk, struct ip_msfilter *msf, int ifindex)
 		goto done;
 	}
 	if (msf->imsf_numsrc) {
-		newpsl = sock_kmalloc(sk, IP_SFLSIZE(msf->imsf_numsrc),
-							   GFP_KERNEL);
+		newpsl = sock_kmalloc(sk, struct_size(newpsl, sl_addr,
+						      msf->imsf_numsrc),
+				      GFP_KERNEL);
 		if (!newpsl) {
 			err = -ENOBUFS;
 			goto done;
 		}
 		newpsl->sl_max = newpsl->sl_count = msf->imsf_numsrc;
-		memcpy(newpsl->sl_addr, msf->imsf_slist,
-			msf->imsf_numsrc * sizeof(msf->imsf_slist[0]));
+		memcpy(newpsl->sl_addr, msf->imsf_slist_flex,
+		       flex_array_size(msf, imsf_slist_flex, msf->imsf_numsrc));
 		err = ip_mc_add_src(in_dev, &msf->imsf_multiaddr,
 			msf->imsf_fmode, newpsl->sl_count, newpsl->sl_addr, 0);
 		if (err) {
-			sock_kfree_s(sk, newpsl, IP_SFLSIZE(newpsl->sl_max));
+			sock_kfree_s(sk, newpsl,
+				     struct_size(newpsl, sl_addr,
+						 newpsl->sl_max));
 			goto done;
 		}
 	} else {
@@ -2502,7 +2516,8 @@ int ip_mc_msfilter(struct sock *sk, struct ip_msfilter *msf, int ifindex)
 		(void) ip_mc_del_src(in_dev, &msf->imsf_multiaddr, pmc->sfmode,
 			psl->sl_count, psl->sl_addr, 0);
 		/* decrease mem now to avoid the memleak warning */
-		atomic_sub(IP_SFLSIZE(psl->sl_max), &sk->sk_omem_alloc);
+		atomic_sub(struct_size(psl, sl_addr, psl->sl_max),
+			   &sk->sk_omem_alloc);
 	} else {
 		(void) ip_mc_del_src(in_dev, &msf->imsf_multiaddr, pmc->sfmode,
 			0, NULL, 0);
@@ -2517,11 +2532,10 @@ done:
 		err = ip_mc_leave_group(sk, &imr);
 	return err;
 }
-
 int ip_mc_msfget(struct sock *sk, struct ip_msfilter *msf,
-	struct ip_msfilter __user *optval, int __user *optlen)
+		 sockptr_t optval, sockptr_t optlen)
 {
-	int err, len, count, copycount;
+	int err, len, count, copycount, msf_size;
 	struct ip_mreqn	imr;
 	__be32 addr = msf->imsf_multiaddr;
 	struct ip_mc_socklist *pmc;
@@ -2556,20 +2570,22 @@ int ip_mc_msfget(struct sock *sk, struct ip_msfilter *msf,
 	msf->imsf_fmode = pmc->sfmode;
 	psl = rtnl_dereference(pmc->sflist);
 	if (!psl) {
-		len = 0;
 		count = 0;
 	} else {
 		count = psl->sl_count;
 	}
 	copycount = count < msf->imsf_numsrc ? count : msf->imsf_numsrc;
-	len = copycount * sizeof(psl->sl_addr[0]);
+	len = flex_array_size(psl, sl_addr, copycount);
 	msf->imsf_numsrc = count;
-	if (put_user(IP_MSFILTER_SIZE(copycount), optlen) ||
-	    copy_to_user(optval, msf, IP_MSFILTER_SIZE(0))) {
+	msf_size = IP_MSFILTER_SIZE(copycount);
+	if (copy_to_sockptr(optlen, &msf_size, sizeof(int)) ||
+	    copy_to_sockptr(optval, msf, IP_MSFILTER_SIZE(0))) {
 		return -EFAULT;
 	}
 	if (len &&
-	    copy_to_user(&optval->imsf_slist[0], psl->sl_addr, len))
+	    copy_to_sockptr_offset(optval,
+				   offsetof(struct ip_msfilter, imsf_slist_flex),
+				   psl->sl_addr, len))
 		return -EFAULT;
 	return 0;
 done:
@@ -2577,7 +2593,7 @@ done:
 }
 
 int ip_mc_gsfget(struct sock *sk, struct group_filter *gsf,
-	struct sockaddr_storage __user *p)
+		 sockptr_t optval, size_t ss_offset)
 {
 	int i, count, copycount;
 	struct sockaddr_in *psin;
@@ -2607,15 +2623,17 @@ int ip_mc_gsfget(struct sock *sk, struct group_filter *gsf,
 	count = psl ? psl->sl_count : 0;
 	copycount = count < gsf->gf_numsrc ? count : gsf->gf_numsrc;
 	gsf->gf_numsrc = count;
-	for (i = 0; i < copycount; i++, p++) {
+	for (i = 0; i < copycount; i++) {
 		struct sockaddr_storage ss;
 
 		psin = (struct sockaddr_in *)&ss;
 		memset(&ss, 0, sizeof(ss));
 		psin->sin_family = AF_INET;
 		psin->sin_addr.s_addr = psl->sl_addr[i];
-		if (copy_to_user(p, &ss, sizeof(ss)))
+		if (copy_to_sockptr_offset(optval, ss_offset,
+					   &ss, sizeof(ss)))
 			return -EFAULT;
+		ss_offset += sizeof(ss);
 	}
 	return 0;
 }
@@ -2835,7 +2853,7 @@ static int igmp_mc_seq_show(struct seq_file *seq, void *v)
 		seq_puts(seq,
 			 "Idx\tDevice    : Count Querier\tGroup    Users Timer\tReporter\n");
 	else {
-		struct ip_mc_list *im = (struct ip_mc_list *)v;
+		struct ip_mc_list *im = v;
 		struct igmp_mc_iter_state *state = igmp_mc_seq_private(seq);
 		char   *querier;
 		long delta;
@@ -2979,7 +2997,7 @@ static void igmp_mcf_seq_stop(struct seq_file *seq, void *v)
 
 static int igmp_mcf_seq_show(struct seq_file *seq, void *v)
 {
-	struct ip_sf_list *psf = (struct ip_sf_list *)v;
+	struct ip_sf_list *psf = v;
 	struct igmp_mcf_iter_state *state = igmp_mcf_seq_private(seq);
 
 	if (v == SEQ_START_TOKEN) {

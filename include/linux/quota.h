@@ -91,7 +91,7 @@ extern bool qid_valid(struct kqid qid);
  *
  *	When there is no mapping defined for the user-namespace, type,
  *	qid tuple an invalid kqid is returned.  Callers are expected to
- *	test for and handle handle invalid kqids being returned.
+ *	test for and handle invalid kqids being returned.
  *	Invalid kqids may be tested for using qid_valid().
  */
 static inline struct kqid make_kqid(struct user_namespace *from,
@@ -285,7 +285,9 @@ static inline void dqstats_dec(unsigned int type)
 #define DQ_FAKE_B	3	/* no limits only usage */
 #define DQ_READ_B	4	/* dquot was read into memory */
 #define DQ_ACTIVE_B	5	/* dquot is active (dquot_release not called) */
-#define DQ_LASTSET_B	6	/* Following 6 bits (see QIF_) are reserved\
+#define DQ_RELEASING_B	6	/* dquot is in releasing_dquots list waiting
+				 * to be cleaned up */
+#define DQ_LASTSET_B	7	/* Following 6 bits (see QIF_) are reserved\
 				 * for the mask of entries set via SETQUOTA\
 				 * quotactl. They are set under dq_data_lock\
 				 * and the quota format handling dquot can\
@@ -316,9 +318,6 @@ struct quota_format_ops {
 	int (*commit_dqblk)(struct dquot *dquot);	/* Write structure for one user */
 	int (*release_dqblk)(struct dquot *dquot);	/* Called when last reference to dquot is being dropped */
 	int (*get_next_id)(struct super_block *sb, struct kqid *qid);	/* Get next ID with existing structure in the quota file */
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
 };
 
 /* Operations working with dquots */
@@ -338,9 +337,6 @@ struct dquot_operations {
 	int (*get_inode_usage) (struct inode *, qsize_t *);
 	/* Get next ID with active quota structure */
 	int (*get_next_id) (struct super_block *sb, struct kqid *qid);
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
 };
 
 struct path;
@@ -444,9 +440,6 @@ struct quotactl_ops {
 	int (*set_dqblk)(struct super_block *, struct kqid, struct qc_dqblk *);
 	int (*get_state)(struct super_block *, struct qc_state *);
 	int (*rm_xquota)(struct super_block *, unsigned int);
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
 };
 
 struct quota_format_type {
@@ -457,17 +450,18 @@ struct quota_format_type {
 };
 
 /**
- * Quota state flags - they actually come in two flavors - for users and groups.
+ * Quota state flags - they come in three flavors - for users, groups and projects.
  *
  * Actual typed flags layout:
- *				USRQUOTA	GRPQUOTA
- *  DQUOT_USAGE_ENABLED		0x0001		0x0002
- *  DQUOT_LIMITS_ENABLED	0x0004		0x0008
- *  DQUOT_SUSPENDED		0x0010		0x0020
+ *				USRQUOTA	GRPQUOTA	PRJQUOTA
+ *  DQUOT_USAGE_ENABLED		0x0001		0x0002		0x0004
+ *  DQUOT_LIMITS_ENABLED	0x0008		0x0010		0x0020
+ *  DQUOT_SUSPENDED		0x0040		0x0080		0x0100
  *
  * Following bits are used for non-typed flags:
- *  DQUOT_QUOTA_SYS_FILE	0x0040
- *  DQUOT_NEGATIVE_USAGE	0x0080
+ *  DQUOT_QUOTA_SYS_FILE	0x0200
+ *  DQUOT_NEGATIVE_USAGE	0x0400
+ *  DQUOT_NOLIST_DIRTY		0x0800
  */
 enum {
 	_DQUOT_USAGE_ENABLED = 0,		/* Track disk usage for users */

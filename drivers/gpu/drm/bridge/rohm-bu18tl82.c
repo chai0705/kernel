@@ -146,7 +146,7 @@ static struct mipi_dsi_device *bu18tl82_attach_dsi(struct bu18tl82 *bu18tl82,
 	dsi->lanes = 4;
 	dsi->format = MIPI_DSI_FMT_RGB888;
 	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
-			  MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_EOT_PACKET;
+			  MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_NO_EOT_PACKET;
 
 	ret = mipi_dsi_attach(dsi);
 	if (ret < 0) {
@@ -169,13 +169,6 @@ static int bu18tl82_bridge_attach(struct drm_bridge *bridge,
 	if (ret)
 		return ret;
 
-	if (bu18tl82->sel_mipi) {
-		/* Attach primary DSI */
-		bu18tl82->dsi = bu18tl82_attach_dsi(bu18tl82, bu18tl82->dsi_node);
-		if (IS_ERR(bu18tl82->dsi))
-			return PTR_ERR(bu18tl82->dsi);
-	}
-
 	ret = drm_bridge_attach(bridge->encoder, bu18tl82->bridge,
 				bridge, flags);
 	if (ret) {
@@ -191,12 +184,12 @@ static int bu18tl82_bridge_attach(struct drm_bridge *bridge,
 
 static void bu18tl82_bridge_detach(struct drm_bridge *bridge)
 {
-	struct bu18tl82 *bu18tl82 = bridge_to_bu18tl82(bridge);
+}
 
-	if (bu18tl82->sel_mipi) {
-		mipi_dsi_detach(bu18tl82->dsi);
-		mipi_dsi_device_unregister(bu18tl82->dsi);
-	}
+static void bu18tl82_detach_dsi(struct bu18tl82 *bu18tl82)
+{
+	mipi_dsi_detach(bu18tl82->dsi);
+	mipi_dsi_device_unregister(bu18tl82->dsi);
 }
 
 static void bu18tl82_bridge_enable(struct drm_bridge *bridge)
@@ -301,16 +294,31 @@ static int bu18tl82_i2c_probe(struct i2c_client *client,
 
 	drm_bridge_add(&bu18tl82->base);
 
+	if (bu18tl82->sel_mipi) {
+		/* Attach primary DSI */
+		bu18tl82->dsi = bu18tl82_attach_dsi(bu18tl82, bu18tl82->dsi_node);
+		if (IS_ERR(bu18tl82->dsi)) {
+			dev_err(bu18tl82->dev, "failed to attach dsi\n");
+			ret = PTR_ERR(bu18tl82->dsi);
+			goto err_remove_bridge;
+		}
+	}
+
 	return 0;
+
+err_remove_bridge:
+	drm_bridge_remove(&bu18tl82->base);
+	return ret;
 }
 
-static int bu18tl82_i2c_remove(struct i2c_client *client)
+static void bu18tl82_i2c_remove(struct i2c_client *client)
 {
 	struct bu18tl82 *bu18tl82 = i2c_get_clientdata(client);
 
-	drm_bridge_remove(&bu18tl82->base);
+	if (bu18tl82->sel_mipi)
+		bu18tl82_detach_dsi(bu18tl82);
 
-	return 0;
+	drm_bridge_remove(&bu18tl82->base);
 }
 
 static const struct i2c_device_id bu18tl82_i2c_table[] = {

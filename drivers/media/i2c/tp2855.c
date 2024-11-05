@@ -238,10 +238,10 @@ static struct tp2855_mode supported_modes[] = {
 		.global_reg_list = common_setting_594M_1080p_25fps_regs,
 		.mipi_freq_idx = 0,
 		.bpp = 8,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_3,
+		.vc[PAD0] = 0,
+		.vc[PAD1] = 1,
+		.vc[PAD2] = 2,
+		.vc[PAD3] = 3,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_UYVY8_2X8,
@@ -254,10 +254,10 @@ static struct tp2855_mode supported_modes[] = {
 		.global_reg_list = common_setting_297M_720p_25fps_regs,
 		.mipi_freq_idx = 1,
 		.bpp = 8,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_3,
+		.vc[PAD0] = 0,
+		.vc[PAD1] = 1,
+		.vc[PAD2] = 2,
+		.vc[PAD3] = 3,
 	}
 };
 
@@ -371,7 +371,7 @@ tp2855_find_best_fit(struct tp2855 *tp2855,
 }
 
 static int tp2855_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct tp2855 *tp2855 = to_tp2855(sd);
@@ -389,7 +389,7 @@ static int tp2855_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&tp2855->mutex);
 		return -ENOTTY;
@@ -407,7 +407,7 @@ static int tp2855_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int tp2855_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct tp2855 *tp2855 = to_tp2855(sd);
@@ -417,7 +417,7 @@ static int tp2855_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&tp2855->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&tp2855->mutex);
 		return -ENOTTY;
@@ -443,7 +443,7 @@ static int tp2855_get_fmt(struct v4l2_subdev *sd,
 
 
 static int tp2855_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct tp2855 *tp2855 = to_tp2855(sd);
@@ -456,7 +456,7 @@ static int tp2855_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int tp2855_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct tp2855 *tp2855 = to_tp2855(sd);
@@ -477,12 +477,11 @@ static int tp2855_enum_frame_sizes(struct v4l2_subdev *sd,
 	return 0;
 }
 
-static int tp2855_g_mbus_config(struct v4l2_subdev *sd,
+static int tp2855_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *cfg)
 {
-	cfg->type = V4L2_MBUS_CSI2;
-	cfg->flags = V4L2_MBUS_CSI2_4_LANE |
-		     V4L2_MBUS_CSI2_CHANNELS;
+	cfg->type = V4L2_MBUS_CSI2_DPHY;
+	cfg->bus.mipi_csi2.num_data_lanes = 4;
 
 	return 0;
 }
@@ -851,7 +850,7 @@ static int tp2855_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct tp2855 *tp2855 = to_tp2855(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct tp2855_mode *def_mode = &supported_modes[0];
 
 	dev_dbg(&tp2855->client->dev, "%s\n", __func__);
@@ -878,7 +877,6 @@ static const struct v4l2_subdev_internal_ops tp2855_internal_ops = {
 
 static const struct v4l2_subdev_video_ops tp2855_video_ops = {
 	.s_stream = tp2855_stream,
-	.g_mbus_config = tp2855_g_mbus_config,
 };
 
 static const struct v4l2_subdev_pad_ops tp2855_subdev_pad_ops = {
@@ -886,6 +884,7 @@ static const struct v4l2_subdev_pad_ops tp2855_subdev_pad_ops = {
 	.enum_frame_size = tp2855_enum_frame_sizes,
 	.get_fmt = tp2855_get_fmt,
 	.set_fmt = tp2855_set_fmt,
+	.get_mbus_config = tp2855_g_mbus_config,
 };
 
 static const struct v4l2_subdev_core_ops tp2855_core_ops = {
@@ -1024,7 +1023,7 @@ static int tp2855_probe(struct i2c_client *client,
 		 tp2855->module_index, facing,
 		 TP2855_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1050,7 +1049,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int tp2855_remove(struct i2c_client *client)
+static void tp2855_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct tp2855 *tp2855 = to_tp2855(sd);
@@ -1066,8 +1065,6 @@ static int tp2855_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__tp2855_power_off(tp2855);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 static const struct dev_pm_ops tp2855_pm_ops = {
@@ -1114,4 +1111,4 @@ module_exit(sensor_mod_exit);
 
 MODULE_AUTHOR("Vicent Chi <vicent.chi@rock-chips.com>");
 MODULE_DESCRIPTION("tp2855 sensor driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

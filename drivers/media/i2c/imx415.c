@@ -53,6 +53,8 @@
 #include <media/v4l2-fwnode.h>
 #include <linux/of_graph.h>
 #include "../platform/rockchip/isp/rkisp_tb_helper.h"
+#include "cam-tb-setup.h"
+#include "cam-sleep-wakeup.h"
 
 #define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x08)
 
@@ -242,6 +244,7 @@ struct imx415 {
 	bool			has_init_exp;
 	struct preisp_hdrae_exp_s init_hdrae_exp;
 	struct v4l2_fwnode_endpoint bus_cfg;
+	struct cam_sw_info *cam_sw_inf;
 };
 
 static struct rkmodule_csi_dphy_param dcphy_param = {
@@ -1093,7 +1096,7 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 1,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1116,10 +1119,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X2,
 		.mipi_freq_idx = 2,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1142,10 +1145,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X3,
 		.mipi_freq_idx = 2,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_2,//S->csi wr2
+		.vc[PAD0] = 2,
+		.vc[PAD1] = 1,//M->csi wr0
+		.vc[PAD2] = 0,//L->csi wr0
+		.vc[PAD3] = 2,//S->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1168,10 +1171,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X3,
 		.mipi_freq_idx = 3,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_2,//S->csi wr2
+		.vc[PAD0] = 2,
+		.vc[PAD1] = 1,//M->csi wr0
+		.vc[PAD2] = 0,//L->csi wr0
+		.vc[PAD3] = 2,//S->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1191,7 +1194,7 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 1,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1214,10 +1217,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X2,
 		.mipi_freq_idx = 3,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1240,10 +1243,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X3,
 		.mipi_freq_idx = 3,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_2,//S->csi wr2
+		.vc[PAD0] = 2,
+		.vc[PAD1] = 1,//M->csi wr0
+		.vc[PAD2] = 0,//L->csi wr0
+		.vc[PAD3] = 2,//S->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1262,7 +1265,7 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 	{
@@ -1285,10 +1288,10 @@ static const struct imx415_mode supported_modes[] = {
 		.hdr_mode = HDR_X2,
 		.mipi_freq_idx = 1,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 		.xvclk = IMX415_XVCLK_FREQ_37M,
 	},
 };
@@ -1311,7 +1314,7 @@ static const struct imx415_mode supported_modes_2lane[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 1,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 		.xvclk = IMX415_XVCLK_FREQ_27M,
 	},
 	{
@@ -1331,7 +1334,7 @@ static const struct imx415_mode supported_modes_2lane[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 4,
 		.bpp = 12,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 		.xvclk = IMX415_XVCLK_FREQ_27M,
 	},
 };
@@ -1475,7 +1478,7 @@ static void imx415_change_mode(struct imx415 *imx415, const struct imx415_mode *
 }
 
 static int imx415_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -1493,7 +1496,7 @@ static int imx415_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&imx415->mutex);
 		return -ENOTTY;
@@ -1525,7 +1528,7 @@ static int imx415_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx415_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -1534,7 +1537,7 @@ static int imx415_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&imx415->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&imx415->mutex);
 		return -ENOTTY;
@@ -1555,7 +1558,7 @@ static int imx415_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int imx415_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -1569,7 +1572,7 @@ static int imx415_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int imx415_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -1603,19 +1606,10 @@ static int imx415_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	struct imx415 *imx415 = to_imx415(sd);
-	const struct imx415_mode *mode = imx415->cur_mode;
-	u32 val = 0;
 	u8 lanes = imx415->bus_cfg.bus.mipi_csi2.num_data_lanes;
 
-	val = 1 << (lanes - 1) |
-	      V4L2_MBUS_CSI2_CHANNEL_0 |
-	      V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = lanes;
 
 	return 0;
 }
@@ -2435,11 +2429,6 @@ int __imx415_power_on(struct imx415 *imx415)
 	}
 
 	if (!imx415->is_thunderboot) {
-		ret = regulator_bulk_enable(IMX415_NUM_SUPPLIES, imx415->supplies);
-		if (ret < 0) {
-			dev_err(dev, "Failed to enable regulators\n");
-			goto err_pinctrl;
-		}
 		if (!IS_ERR(imx415->power_gpio))
 			gpiod_direction_output(imx415->power_gpio, 1);
 		/* At least 500ns between power raising and XCLR */
@@ -2463,18 +2452,28 @@ int __imx415_power_on(struct imx415 *imx415)
 		goto err_clk;
 	}
 
+	cam_sw_regulator_bulk_init(imx415->cam_sw_inf, IMX415_NUM_SUPPLIES, imx415->supplies);
+
+	if (imx415->is_thunderboot)
+		return 0;
+
+	ret = regulator_bulk_enable(IMX415_NUM_SUPPLIES, imx415->supplies);
+	if (ret < 0) {
+		dev_err(dev, "Failed to enable regulators\n");
+		goto err_pinctrl;
+	}
+
 	/* At least 20us between XCLR and I2C communication */
-	if (!imx415->is_thunderboot)
-		usleep_range(20*1000, 30*1000);
+	usleep_range(20*1000, 30*1000);
 
 	return 0;
+
+err_pinctrl:
+	clk_disable_unprepare(imx415->xvclk);
 
 err_clk:
 	if (!IS_ERR(imx415->reset_gpio))
 		gpiod_direction_output(imx415->reset_gpio, 1);
-	regulator_bulk_disable(IMX415_NUM_SUPPLIES, imx415->supplies);
-
-err_pinctrl:
 	if (!IS_ERR_OR_NULL(imx415->pins_sleep))
 		pinctrl_select_state(imx415->pinctrl, imx415->pins_sleep);
 
@@ -2509,6 +2508,51 @@ static void __imx415_power_off(struct imx415 *imx415)
 	regulator_bulk_disable(IMX415_NUM_SUPPLIES, imx415->supplies);
 }
 
+#if IS_REACHABLE(CONFIG_VIDEO_CAM_SLEEP_WAKEUP)
+static int __maybe_unused imx415_resume(struct device *dev)
+{
+	int ret;
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct imx415 *imx415 = to_imx415(sd);
+
+	cam_sw_prepare_wakeup(imx415->cam_sw_inf, dev);
+
+	usleep_range(4000, 5000);
+	cam_sw_write_array(imx415->cam_sw_inf);
+
+	if (__v4l2_ctrl_handler_setup(&imx415->ctrl_handler))
+		dev_err(dev, "__v4l2_ctrl_handler_setup fail!");
+
+	if (imx415->has_init_exp && imx415->cur_mode != NO_HDR) {	// hdr mode
+		ret = imx415_ioctl(&imx415->subdev, PREISP_CMD_SET_HDRAE_EXP,
+				    &imx415->cam_sw_inf->hdr_ae);
+		if (ret) {
+			dev_err(&imx415->client->dev, "set exp fail in hdr mode\n");
+			return ret;
+		}
+	}
+	return 0;
+}
+
+static int __maybe_unused imx415_suspend(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct imx415 *imx415 = to_imx415(sd);
+
+	cam_sw_write_array_cb_init(imx415->cam_sw_inf, client,
+				   (void *)imx415->cur_mode->reg_list,
+				   (sensor_write_array)imx415_write_array);
+	cam_sw_prepare_sleep(imx415->cam_sw_inf);
+
+	return 0;
+}
+#else
+#define imx415_resume NULL
+#define imx415_suspend NULL
+#endif
+
 static int __maybe_unused imx415_runtime_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -2534,7 +2578,7 @@ static int imx415_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct imx415 *imx415 = to_imx415(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct imx415_mode *def_mode = &imx415->supported_modes[0];
 
 	mutex_lock(&imx415->mutex);
@@ -2552,7 +2596,7 @@ static int imx415_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int imx415_enum_frame_interval(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -2584,7 +2628,7 @@ static int imx415_enum_frame_interval(struct v4l2_subdev *sd,
  * to the alignment rules.
  */
 static int imx415_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct imx415 *imx415 = to_imx415(sd);
@@ -2614,6 +2658,7 @@ static int imx415_get_selection(struct v4l2_subdev *sd,
 static const struct dev_pm_ops imx415_pm_ops = {
 	SET_RUNTIME_PM_OPS(imx415_runtime_suspend,
 			   imx415_runtime_resume, NULL)
+	SET_LATE_SYSTEM_SLEEP_PM_OPS(imx415_suspend, imx415_resume)
 };
 
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
@@ -3027,6 +3072,14 @@ static int imx415_probe(struct i2c_client *client,
 		goto err_power_off;
 #endif
 
+	if (!imx415->cam_sw_inf) {
+		imx415->cam_sw_inf = cam_sw_init();
+		cam_sw_clk_init(imx415->cam_sw_inf, imx415->xvclk, imx415->cur_mode->xvclk);
+		cam_sw_reset_pin_init(imx415->cam_sw_inf, imx415->reset_gpio, 1);
+		if (!IS_ERR(imx415->power_gpio))
+			cam_sw_pwdn_pin_init(imx415->cam_sw_inf, imx415->power_gpio, 0);
+	}
+
 	memset(facing, 0, sizeof(facing));
 	if (strcmp(imx415->module_facing, "back") == 0)
 		facing[0] = 'b';
@@ -3036,7 +3089,7 @@ static int imx415_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 imx415->module_index, facing,
 		 IMX415_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -3062,7 +3115,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int imx415_remove(struct i2c_client *client)
+static void imx415_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct imx415 *imx415 = to_imx415(sd);
@@ -3074,12 +3127,12 @@ static int imx415_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&imx415->ctrl_handler);
 	mutex_destroy(&imx415->mutex);
 
+	cam_sw_deinit(imx415->cam_sw_inf);
+
 	pm_runtime_disable(&client->dev);
 	if (!pm_runtime_status_suspended(&client->dev))
 		__imx415_power_off(imx415);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

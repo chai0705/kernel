@@ -982,7 +982,7 @@ static int otp_eeprom_show(struct seq_file *p, void *v)
 
 static int eeprom_open(struct inode *inode, struct file *file)
 {
-	struct eeprom_device *data = PDE_DATA(inode);
+	struct eeprom_device *data = pde_data(inode);
 
 	return single_open(file, otp_eeprom_show, data);
 }
@@ -1059,7 +1059,7 @@ static int eeprom_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int eeprom_remove(struct i2c_client *client)
+static void eeprom_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct eeprom_device *eeprom_dev =
@@ -1069,8 +1069,6 @@ static int eeprom_remove(struct i2c_client *client)
 	pm_runtime_disable(&client->dev);
 	eeprom_subdev_cleanup(eeprom_dev);
 	eeprom_proc_cleanup(eeprom_dev);
-
-	return 0;
 }
 
 static int __maybe_unused eeprom_suspend(struct device *dev)

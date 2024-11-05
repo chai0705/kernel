@@ -263,7 +263,7 @@ max96714_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int max96714_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct max96714 *max96714 = to_max96714(sd);
@@ -278,7 +278,7 @@ static int max96714_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&max96714->mutex);
 		return -ENOTTY;
@@ -296,7 +296,7 @@ static int max96714_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int max96714_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct max96714 *max96714 = to_max96714(sd);
@@ -305,7 +305,7 @@ static int max96714_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&max96714->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&max96714->mutex);
 		return -ENOTTY;
@@ -322,7 +322,7 @@ static int max96714_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int max96714_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -333,7 +333,7 @@ static int max96714_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int max96714_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -740,7 +740,7 @@ static int max96714_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct max96714 *max96714 = to_max96714(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct max96714_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&max96714->mutex);
@@ -758,7 +758,7 @@ static int max96714_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int max96714_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -785,7 +785,7 @@ static int max96714_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad,
 }
 
 static int max96714_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct max96714 *max96714 = to_max96714(sd);
@@ -1019,7 +1019,7 @@ static int max96714_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 max96714->module_index, facing,
 		 MAX96714_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1045,7 +1045,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int max96714_remove(struct i2c_client *client)
+static void max96714_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct max96714 *max96714 = to_max96714(sd);
@@ -1061,8 +1061,6 @@ static int max96714_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__max96714_power_off(max96714);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

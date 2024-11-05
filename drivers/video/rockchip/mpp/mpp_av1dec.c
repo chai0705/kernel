@@ -467,87 +467,6 @@ free_task:
 #define AV1_PP_TILE_SIZE	GENMASK_ULL(10, 9)
 #define AV1_PP_TILE_16X16	BIT(10)
 
-#define AV1_PP_OUT_LUMA_ADR_INDEX	326
-#define AV1_PP_OUT_CHROMA_ADR_INDEX	328
-
-#define AV1_L2_CACHE_SHAPER_CTRL	0x20
-#define AV1_L2_CACHE_SHAPER_EN		BIT(0)
-#define AV1_L2_CACHE_INT_MASK		0x30
-#define AV1_L2_CACHE_PP0_Y_CONFIG0	0x84
-#define AV1_L2_CACHE_PP0_Y_CONFIG2	0x8c
-#define AV1_L2_CACHE_PP0_Y_CONFIG3	0x90
-#define AV1_L2_CACHE_PP0_U_CONFIG0	0x98
-#define AV1_L2_CACHE_PP0_U_CONFIG2	0xa0
-#define AV1_L2_CACHE_PP0_U_CONFIG3	0xa4
-
-#define AV1_L2_CACHE_RD_ONLY_CTRL	0x204
-#define AV1_L2_CACHE_RD_ONLY_CONFIG	0x208
-
-static int av1dec_set_l2_cache(struct av1dec_dev *dec, struct av1dec_task *task)
-{
-	int val;
-	u32 *regs = (u32 *)task->reg_class[0].data;
-	u32 width = (regs[4] >> 19) * 8;
-	u32 height = ((regs[4] >> 6) & 0x1fff) * 8;
-	u32 pixel_width = (((regs[322]) >> 27) & 0x1F) == 1 ? 8 : 16;
-	u32 pre_fetch_height = 136;
-	u32 max_h;
-	u32 line_cnt;
-	u32 line_size;
-	u32 line_stride;
-
-	/* channel 4, PPU0_Y Configuration */
-	/* afbc sharper can't use open cache.
-	 * afbc out must be tile 16x16.
-	 */
-	if ((regs[AV1_PP_CONFIG_INDEX] & AV1_PP_TILE_SIZE) != AV1_PP_TILE_16X16) {
-		line_size = MPP_ALIGN(MPP_ALIGN(width * pixel_width, 8) / 8, 16);
-		line_stride = MPP_ALIGN(MPP_ALIGN(width * pixel_width, 8) / 8, 16) >> 4;
-		line_cnt = height;
-		max_h = pre_fetch_height;
-
-		writel_relaxed(regs[AV1_PP_OUT_LUMA_ADR_INDEX] + 0x1,
-			       dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_Y_CONFIG0);
-		val = line_size | (line_stride << 16);
-		writel_relaxed(val, dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_Y_CONFIG2);
-
-		val = line_cnt | (max_h << 16);
-		writel_relaxed(val, dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_Y_CONFIG3);
-
-		/* channel 5, PPU0_U Configuration */
-		line_size = MPP_ALIGN(MPP_ALIGN(width * pixel_width, 8) / 8, 16);
-		line_stride = MPP_ALIGN(MPP_ALIGN(width * pixel_width, 8) / 8, 16) >> 4;
-		line_cnt = height >> 1;
-		max_h = pre_fetch_height >> 1;
-
-		writel_relaxed(regs[AV1_PP_OUT_CHROMA_ADR_INDEX] + 0x1,
-			       dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_U_CONFIG0);
-		val = line_size | (line_stride << 16);
-		writel_relaxed(val, dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_U_CONFIG2);
-
-		val = line_cnt | (max_h << 16);
-		writel_relaxed(val, dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_PP0_U_CONFIG3);
-		/* mask cache irq */
-		writel_relaxed(0xf, dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_INT_MASK);
-
-		/* shaper enable */
-		writel_relaxed(AV1_L2_CACHE_SHAPER_EN,
-			       dec->reg_base[AV1DEC_CLASS_CACHE] + AV1_L2_CACHE_SHAPER_CTRL);
-
-		/* not enable cache en when multi tiles */
-		if (!(regs[10] & BIT(1)))
-			/* cache all en */
-			writel_relaxed(0x00000001, dec->reg_base[AV1DEC_CLASS_CACHE] +
-				AV1_L2_CACHE_RD_ONLY_CONFIG);
-		/* reorder_e and cache_e */
-		writel_relaxed(0x00000081, dec->reg_base[AV1DEC_CLASS_CACHE] +
-			       AV1_L2_CACHE_RD_ONLY_CTRL);
-		/* wmb */
-		wmb();
-	}
-
-	return 0;
-}
 #define REG_CONTROL		0x20
 #define REG_INTRENBL		0x34
 #define REG_ACKNOWLEDGE		0x38
@@ -656,7 +575,6 @@ static int av1dec_run(struct mpp_dev *mpp, struct mpp_task *mpp_task)
 
 	mpp_debug_enter();
 	mpp_iommu_flush_tlb(mpp->iommu_info);
-	av1dec_set_l2_cache(dec, task);
 	av1dec_set_afbc(dec, task);
 
 	for (i = 0; i < task->w_req_cnt; i++) {
@@ -1025,180 +943,6 @@ static const struct of_device_id mpp_av1dec_dt_match[] = {
 	{},
 };
 
-static int av1dec_device_match(struct device *dev, struct device_driver *drv)
-{
-	return 1;
-}
-
-static int av1dec_device_probe(struct device *dev)
-{
-	int ret;
-	const struct platform_driver *drv;
-	struct platform_device *pdev = to_platform_device(dev);
-
-	ret = of_clk_set_defaults(dev->of_node, false);
-	if (ret < 0)
-		return ret;
-
-	ret = dev_pm_domain_attach(dev, true);
-	if (ret)
-		return ret;
-
-	drv = to_platform_driver(dev->driver);
-	if (drv->probe) {
-		ret = drv->probe(pdev);
-		if (ret)
-			dev_pm_domain_detach(dev, true);
-	}
-
-	return ret;
-}
-
-static int av1dec_device_remove(struct device *dev)
-{
-
-	struct platform_device *pdev = to_platform_device(dev);
-	struct platform_driver *drv = to_platform_driver(dev->driver);
-
-	if (dev->driver && drv->remove)
-		drv->remove(pdev);
-
-	dev_pm_domain_detach(dev, true);
-
-	return 0;
-}
-
-static void av1dec_device_shutdown(struct device *dev)
-{
-	struct platform_device *pdev = to_platform_device(dev);
-	struct platform_driver *drv = to_platform_driver(dev->driver);
-
-	if (dev->driver && drv->shutdown)
-		drv->shutdown(pdev);
-}
-
-static int av1dec_dma_configure(struct device *dev)
-{
-	return of_dma_configure(dev, dev->of_node, true);
-}
-
-static const struct dev_pm_ops platform_dev_pm_ops = {
-	.runtime_suspend = pm_generic_runtime_suspend,
-	.runtime_resume = pm_generic_runtime_resume,
-};
-
-struct bus_type av1dec_bus = {
-	.name		= "av1dec_bus",
-	.match		= av1dec_device_match,
-	.probe		= av1dec_device_probe,
-	.remove		= av1dec_device_remove,
-	.shutdown	= av1dec_device_shutdown,
-	.dma_configure  = av1dec_dma_configure,
-	.pm		= &platform_dev_pm_ops,
-};
-
-static int av1_of_device_add(struct platform_device *ofdev)
-{
-	WARN_ON(ofdev->dev.of_node == NULL);
-
-	/* name and id have to be set so that the platform bus doesn't get
-	 * confused on matching
-	 */
-	ofdev->name = dev_name(&ofdev->dev);
-	ofdev->id = PLATFORM_DEVID_NONE;
-
-	/*
-	 * If this device has not binding numa node in devicetree, that is
-	 * of_node_to_nid returns NUMA_NO_NODE. device_add will assume that this
-	 * device is on the same node as the parent.
-	 */
-	set_dev_node(&ofdev->dev, of_node_to_nid(ofdev->dev.of_node));
-
-	return device_add(&ofdev->dev);
-}
-
-static struct platform_device *av1dec_device_create(void)
-{
-	int ret = -ENODEV;
-	struct device_node *root, *child;
-	struct platform_device *pdev;
-
-	root = of_find_node_by_path("/");
-
-	for_each_child_of_node(root, child) {
-		if (!of_match_node(mpp_av1dec_dt_match, child))
-			continue;
-
-		pr_info("Adding child %pOF\n", child);
-
-		pdev = of_device_alloc(child, "av1d-master", NULL);
-		if (!pdev)
-			return ERR_PTR(-ENOMEM);
-
-		pdev->dev.bus = &av1dec_bus;
-
-		dma_coerce_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
-
-		ret = av1_of_device_add(pdev);
-		if (ret) {
-			platform_device_put(pdev);
-			return ERR_PTR(-EINVAL);
-		}
-
-		pr_info("register device %s\n", dev_name(&pdev->dev));
-
-		return  pdev;
-	}
-
-	return ERR_PTR(ret);
-}
-
-static void av1dec_device_destory(void)
-{
-	struct platform_device *pdev;
-	struct device *dev;
-
-	dev = bus_find_device_by_name(&av1dec_bus, NULL, "av1d-master");
-	pdev = dev ? to_platform_device(dev) : NULL;
-	if (!pdev) {
-		pr_err("cannot find platform device\n");
-		return;
-	}
-
-	pr_info("destroy device %s\n", dev_name(&pdev->dev));
-	platform_device_del(pdev);
-	platform_device_put(pdev);
-}
-
-void av1dec_driver_unregister(struct platform_driver *drv)
-{
-	/* 1. unregister av1 driver */
-	driver_unregister(&drv->driver);
-	/* 2. release device */
-	av1dec_device_destory();
-	/* 3. unregister iommu driver */
-	platform_driver_unregister(&rockchip_av1_iommu_driver);
-	/* 4. unregister bus */
-	bus_unregister(&av1dec_bus);
-}
-
-int av1dec_driver_register(struct platform_driver *drv)
-{
-	int ret;
-	/* 1. register bus */
-	ret = bus_register(&av1dec_bus);
-	if (ret) {
-		pr_err("failed to register av1 bus: %d\n", ret);
-		return ret;
-	}
-	/* 2. register iommu driver */
-	platform_driver_register(&rockchip_av1_iommu_driver);
-	/* 3. create device */
-	av1dec_device_create();
-	/* 4. register av1 driver */
-	return driver_register(&drv->driver);
-}
-
 static int av1dec_cache_init(struct platform_device *pdev, struct av1dec_dev *dec)
 {
 	struct resource *res;
@@ -1250,7 +994,7 @@ static int av1dec_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	mpp = &dec->mpp;
-	platform_set_drvdata(pdev, dec);
+	platform_set_drvdata(pdev, mpp);
 
 	if (pdev->dev.of_node) {
 		match = of_match_node(mpp_av1dec_dt_match, pdev->dev.of_node);
@@ -1262,14 +1006,10 @@ static int av1dec_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	/* iommu may disabled */
-	if (mpp->iommu_info)
-		mpp->iommu_info->av1d_iommu = 1;
-
 	dec->reg_base[AV1DEC_CLASS_VCD] = mpp->reg_base;
 	ret = devm_request_threaded_irq(dev, mpp->irq,
 					mpp_dev_irq,
-					mpp_dev_isr_sched,
+					NULL,
 					IRQF_SHARED,
 					dev_name(dev), mpp);
 	if (ret) {
@@ -1302,42 +1042,21 @@ failed_get_irq:
 static int av1dec_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct av1dec_dev *dec = platform_get_drvdata(pdev);
+	struct mpp_dev *mpp = platform_get_drvdata(pdev);
 
 	dev_info(dev, "remove device\n");
-	mpp_dev_remove(&dec->mpp);
-	av1dec_procfs_remove(&dec->mpp);
+	mpp_dev_remove(mpp);
+	av1dec_procfs_remove(mpp);
 
 	return 0;
-}
-
-static void av1dec_shutdown(struct platform_device *pdev)
-{
-	int ret;
-	int val;
-	struct device *dev = &pdev->dev;
-	struct av1dec_dev *dec = platform_get_drvdata(pdev);
-	struct mpp_dev *mpp = &dec->mpp;
-
-	dev_info(dev, "shutdown device\n");
-
-	atomic_inc(&mpp->srv->shutdown_request);
-	ret = readx_poll_timeout(atomic_read,
-				 &mpp->task_count,
-				 val, val == 0, 1000, 200000);
-	if (ret == -ETIMEDOUT)
-		dev_err(dev, "wait total running time out\n");
-
-	dev_info(dev, "shutdown success\n");
 }
 
 struct platform_driver rockchip_av1dec_driver = {
 	.probe = av1dec_probe,
 	.remove = av1dec_remove,
-	.shutdown = av1dec_shutdown,
+	.shutdown = mpp_dev_shutdown,
 	.driver = {
 		.name = AV1DEC_DRIVER_NAME,
 		.of_match_table = of_match_ptr(mpp_av1dec_dt_match),
-		.bus = &av1dec_bus,
 	},
 };

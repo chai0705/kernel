@@ -408,13 +408,11 @@ static int rk1000_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int rk1000_remove(struct i2c_client *client)
+static void rk1000_remove(struct i2c_client *client)
 {
 	struct rk1000_tve *rk1000 = i2c_get_clientdata(client);
 
 	drm_bridge_remove(&rk1000->bridge);
-
-	return 0;
 }
 
 static const struct i2c_device_id rk1000_i2c_id[] = {

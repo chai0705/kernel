@@ -79,9 +79,9 @@ static int st_lsm6dsr_spi_probe(struct spi_device *spi)
 				&st_lsm6dsr_transfer_fn);
 }
 
-static int st_lsm6dsr_spi_remove(struct spi_device *spi)
+static void st_lsm6dsr_spi_remove(struct spi_device *spi)
 {
-	return st_lsm6dsr_remove(&spi->dev);
+	st_lsm6dsr_remove(&spi->dev);
 }
 
 static const struct of_device_id st_lsm6dsr_spi_of_match[] = {

@@ -66,9 +66,9 @@ static int st_lsm6dsr_i2c_probe(struct i2c_client *client,
 				&st_lsm6dsr_transfer_fn);
 }
 
-static int st_lsm6dsr_i2c_remove(struct i2c_client *client)
+static void st_lsm6dsr_i2c_remove(struct i2c_client *client)
 {
-	return st_lsm6dsr_remove(&client->dev);
+	st_lsm6dsr_remove(&client->dev);
 }
 
 static const struct of_device_id st_lsm6dsr_i2c_of_match[] = {

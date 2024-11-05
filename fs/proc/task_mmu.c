@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/pagewalk.h>
-#include <linux/vmacache.h>
+#include <linux/mm_inline.h>
 #include <linux/hugetlb.h>
 #include <linux/huge_mm.h>
 #include <linux/mount.h>
@@ -123,54 +123,19 @@ static void release_task_mempolicy(struct proc_maps_private *priv)
 }
 #endif
 
-static void seq_print_vma_name(struct seq_file *m, struct vm_area_struct *vma)
+static struct vm_area_struct *proc_get_vma(struct proc_maps_private *priv,
+						loff_t *ppos)
 {
-	const char __user *name = vma_get_anon_name(vma);
-	struct mm_struct *mm = vma->vm_mm;
+	struct vm_area_struct *vma = vma_next(&priv->iter);
 
-	unsigned long page_start_vaddr;
-	unsigned long page_offset;
-	unsigned long num_pages;
-	unsigned long max_len = NAME_MAX;
-	int i;
-
-	page_start_vaddr = (unsigned long)name & PAGE_MASK;
-	page_offset = (unsigned long)name - page_start_vaddr;
-	num_pages = DIV_ROUND_UP(page_offset + max_len, PAGE_SIZE);
-
-	seq_puts(m, "[anon:");
-
-	for (i = 0; i < num_pages; i++) {
-		int len;
-		int write_len;
-		const char *kaddr;
-		long pages_pinned;
-		struct page *page;
-
-		pages_pinned = get_user_pages_remote(mm, page_start_vaddr, 1, 0,
-						     &page, NULL, NULL);
-		if (pages_pinned < 1) {
-			seq_puts(m, "<fault>]");
-			return;
-		}
-
-		kaddr = (const char *)kmap(page);
-		len = min(max_len, PAGE_SIZE - page_offset);
-		write_len = strnlen(kaddr + page_offset, len);
-		seq_write(m, kaddr + page_offset, write_len);
-		kunmap(page);
-		put_user_page(page);
-
-		/* if strnlen hit a null terminator then we're done */
-		if (write_len != len)
-			break;
-
-		max_len -= len;
-		page_offset = 0;
-		page_start_vaddr += PAGE_SIZE;
+	if (vma) {
+		*ppos = vma->vm_start;
+	} else {
+		*ppos = -2UL;
+		vma = get_gate_vma(priv->mm);
 	}
 
-	seq_putc(m, ']');
+	return vma;
 }
 
 static void *m_start(struct seq_file *m, loff_t *ppos)
@@ -178,7 +143,6 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 	struct proc_maps_private *priv = m->private;
 	unsigned long last_addr = *ppos;
 	struct mm_struct *mm;
-	struct vm_area_struct *vma;
 
 	/* See m_next(). Zero at the start or after lseek. */
 	if (last_addr == -1UL)
@@ -202,31 +166,21 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 		return ERR_PTR(-EINTR);
 	}
 
+	vma_iter_init(&priv->iter, mm, last_addr);
 	hold_task_mempolicy(priv);
-	priv->tail_vma = get_gate_vma(mm);
+	if (last_addr == -2UL)
+		return get_gate_vma(mm);
 
-	vma = find_vma(mm, last_addr);
-	if (vma)
-		return vma;
-
-	return priv->tail_vma;
+	return proc_get_vma(priv, ppos);
 }
 
 static void *m_next(struct seq_file *m, void *v, loff_t *ppos)
 {
-	struct proc_maps_private *priv = m->private;
-	struct vm_area_struct *next, *vma = v;
-
-	if (vma == priv->tail_vma)
-		next = NULL;
-	else if (vma->vm_next)
-		next = vma->vm_next;
-	else
-		next = priv->tail_vma;
-
-	*ppos = next ? next->vm_start : -1UL;
-
-	return next;
+	if (*ppos == -2UL) {
+		*ppos = -1UL;
+		return NULL;
+	}
+	return proc_get_vma(m->private, ppos);
 }
 
 static void m_stop(struct seq_file *m, void *v)
@@ -358,6 +312,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 
 	name = arch_vma_name(vma);
 	if (!name) {
+		struct anon_vma_name *anon_name;
+
 		if (!mm) {
 			name = "[vdso]";
 			goto done;
@@ -374,9 +330,10 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 			goto done;
 		}
 
-		if (vma_get_anon_name(vma)) {
+		anon_name = anon_vma_name(vma);
+		if (anon_name) {
 			seq_pad(m, ' ');
-			seq_print_vma_name(m, vma);
+			seq_printf(m, "[anon:%s]", anon_name->name);
 		}
 	}
 
@@ -452,9 +409,9 @@ struct mem_size_stats {
 	u64 pss_anon;
 	u64 pss_file;
 	u64 pss_shmem;
+	u64 pss_dirty;
 	u64 pss_locked;
 	u64 swap_pss;
-	bool check_shmem_swap;
 };
 
 static void smaps_page_accumulate(struct mem_size_stats *mss,
@@ -474,6 +431,7 @@ static void smaps_page_accumulate(struct mem_size_stats *mss,
 		mss->pss_locked += pss;
 
 	if (dirty || PageDirty(page)) {
+		mss->pss_dirty += pss;
 		if (private)
 			mss->private_dirty += size;
 		else
@@ -543,15 +501,27 @@ static int smaps_pte_hole(unsigned long addr, unsigned long end,
 			  __always_unused int depth, struct mm_walk *walk)
 {
 	struct mem_size_stats *mss = walk->private;
+	struct vm_area_struct *vma = walk->vma;
 
-	mss->swap += shmem_partial_swap_usage(
-			walk->vma->vm_file->f_mapping, addr, end);
+	mss->swap += shmem_partial_swap_usage(walk->vma->vm_file->f_mapping,
+					      linear_page_index(vma, addr),
+					      linear_page_index(vma, end));
 
 	return 0;
 }
 #else
 #define smaps_pte_hole		NULL
 #endif /* CONFIG_SHMEM */
+
+static void smaps_pte_hole_lookup(unsigned long addr, struct mm_walk *walk)
+{
+#ifdef CONFIG_SHMEM
+	if (walk->ops->pte_hole) {
+		/* depth is not used */
+		smaps_pte_hole(addr, addr + PAGE_SIZE, 0, walk);
+	}
+#endif
+}
 
 static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 		struct mm_walk *walk)
@@ -582,17 +552,13 @@ static void smaps_pte_entry(pte_t *pte, unsigned long addr,
 			} else {
 				mss->swap_pss += (u64)PAGE_SIZE << PSS_SHIFT;
 			}
-		} else if (is_migration_entry(swpent)) {
-			migration = true;
-			page = migration_entry_to_page(swpent);
-		} else if (is_device_private_entry(swpent))
-			page = device_private_entry_to_page(swpent);
-	} else if (unlikely(IS_ENABLED(CONFIG_SHMEM) && mss->check_shmem_swap
-							&& pte_none(*pte))) {
-		page = xa_load(&vma->vm_file->f_mapping->i_pages,
-						linear_page_index(vma, addr));
-		if (xa_is_value(page))
-			mss->swap += PAGE_SIZE;
+		} else if (is_pfn_swap_entry(swpent)) {
+			if (is_migration_entry(swpent))
+				migration = true;
+			page = pfn_swap_entry_to_page(swpent);
+		}
+	} else {
+		smaps_pte_hole_lookup(addr, walk);
 		return;
 	}
 
@@ -620,7 +586,7 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 
 		if (is_migration_entry(entry)) {
 			migration = true;
-			page = migration_entry_to_page(entry);
+			page = pfn_swap_entry_to_page(entry);
 		}
 	}
 	if (IS_ERR_OR_NULL(page))
@@ -695,7 +661,6 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		[ilog2(VM_MAYSHARE)]	= "ms",
 		[ilog2(VM_GROWSDOWN)]	= "gd",
 		[ilog2(VM_PFNMAP)]	= "pf",
-		[ilog2(VM_DENYWRITE)]	= "dw",
 		[ilog2(VM_LOCKED)]	= "lo",
 		[ilog2(VM_IO)]		= "io",
 		[ilog2(VM_SEQ_READ)]	= "sr",
@@ -768,10 +733,8 @@ static int smaps_hugetlb_range(pte_t *pte, unsigned long hmask,
 	} else if (is_swap_pte(*pte)) {
 		swp_entry_t swpent = pte_to_swp_entry(*pte);
 
-		if (is_migration_entry(swpent))
-			page = migration_entry_to_page(swpent);
-		else if (is_device_private_entry(swpent))
-			page = device_private_entry_to_page(swpent);
+		if (is_pfn_swap_entry(swpent))
+			page = pfn_swap_entry_to_page(swpent);
 	}
 	if (page) {
 		if (page_mapcount(page) >= 2 || hugetlb_pmd_shared(pte))
@@ -812,8 +775,6 @@ static void smap_gather_stats(struct vm_area_struct *vma,
 		return;
 
 #ifdef CONFIG_SHMEM
-	/* In case of smaps_rollup, reset the value from previous vma */
-	mss->check_shmem_swap = false;
 	if (vma->vm_file && shmem_mapping(vma->vm_file->f_mapping)) {
 		/*
 		 * For shared or readonly shmem mappings we know that all
@@ -831,7 +792,6 @@ static void smap_gather_stats(struct vm_area_struct *vma,
 					!(vma->vm_flags & VM_WRITE))) {
 			mss->swap += shmem_swapped;
 		} else {
-			mss->check_shmem_swap = true;
 			ops = &smaps_shmem_walk_ops;
 		}
 	}
@@ -852,6 +812,7 @@ static void __show_smap(struct seq_file *m, const struct mem_size_stats *mss,
 {
 	SEQ_PUT_DEC("Rss:            ", mss->resident);
 	SEQ_PUT_DEC(" kB\nPss:            ", mss->pss >> PSS_SHIFT);
+	SEQ_PUT_DEC(" kB\nPss_Dirty:      ", mss->pss_dirty >> PSS_SHIFT);
 	if (rollup_mode) {
 		/*
 		 * These are meaningful only for smaps_rollup, otherwise two of
@@ -895,11 +856,6 @@ static int show_smap(struct seq_file *m, void *v)
 	smap_gather_stats(vma, &mss, 0);
 
 	show_map_vma(m, vma);
-	if (vma_get_anon_name(vma)) {
-		seq_puts(m, "Name:           ");
-		seq_print_vma_name(m, vma);
-		seq_putc(m, '\n');
-	}
 
 	SEQ_PUT_DEC("Size:           ", vma->vm_end - vma->vm_start);
 	SEQ_PUT_DEC(" kB\nKernelPageSize: ", vma_kernel_pagesize(vma));
@@ -909,7 +865,7 @@ static int show_smap(struct seq_file *m, void *v)
 	__show_smap(m, &mss, false);
 
 	seq_printf(m, "THPeligible:    %d\n",
-		   transparent_hugepage_active(vma));
+		   hugepage_vma_check(vma, vma->vm_flags, true, false, true));
 
 	if (arch_pkeys_enabled())
 		seq_printf(m, "ProtectionKey:  %8u\n", vma_pkey(vma));
@@ -922,16 +878,16 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 {
 	struct proc_maps_private *priv = m->private;
 	struct mem_size_stats mss;
-	struct mm_struct *mm;
+	struct mm_struct *mm = priv->mm;
 	struct vm_area_struct *vma;
-	unsigned long last_vma_end = 0;
+	unsigned long vma_start = 0, last_vma_end = 0;
 	int ret = 0;
+	MA_STATE(mas, &mm->mm_mt, 0, 0);
 
 	priv->task = get_proc_task(priv->inode);
 	if (!priv->task)
 		return -ESRCH;
 
-	mm = priv->mm;
 	if (!mm || !mmget_not_zero(mm)) {
 		ret = -ESRCH;
 		goto out_put_task;
@@ -944,8 +900,13 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 		goto out_put_mm;
 
 	hold_task_mempolicy(priv);
+	vma = mas_find(&mas, ULONG_MAX);
 
-	for (vma = priv->mm->mmap; vma;) {
+	if (unlikely(!vma))
+		goto empty_set;
+
+	vma_start = vma->vm_start;
+	do {
 		smap_gather_stats(vma, &mss, 0);
 		last_vma_end = vma->vm_end;
 
@@ -954,6 +915,7 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 		 * access it for write request.
 		 */
 		if (mmap_lock_is_contended(mm)) {
+			mas_pause(&mas);
 			mmap_read_unlock(mm);
 			ret = mmap_read_lock_killable(mm);
 			if (ret) {
@@ -997,7 +959,7 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 			 *    contains last_vma_end.
 			 *    Iterate VMA' from last_vma_end.
 			 */
-			vma = find_vma(mm, last_vma_end - 1);
+			vma = mas_find(&mas, ULONG_MAX);
 			/* Case 3 above */
 			if (!vma)
 				break;
@@ -1011,11 +973,10 @@ static int show_smaps_rollup(struct seq_file *m, void *v)
 				smap_gather_stats(vma, &mss, last_vma_end);
 		}
 		/* Case 2 above */
-		vma = vma->vm_next;
-	}
+	} while ((vma = mas_find(&mas, ULONG_MAX)) != NULL);
 
-	show_vma_header_prefix(m, priv->mm->mmap ? priv->mm->mmap->vm_start : 0,
-			       last_vma_end, 0, 0, 0, 0);
+empty_set:
+	show_vma_header_prefix(m, vma_start, last_vma_end, 0, 0, 0, 0);
 	seq_pad(m, ' ');
 	seq_puts(m, "[rollup]\n");
 
@@ -1116,8 +1077,6 @@ struct clear_refs_private {
 
 #ifdef CONFIG_MEM_SOFT_DIRTY
 
-#define is_cow_mapping(flags) (((flags) & (VM_SHARED | VM_MAYWRITE)) == VM_MAYWRITE)
-
 static inline bool pte_is_pinned(struct vm_area_struct *vma, unsigned long addr, pte_t pte)
 {
 	struct page *page;
@@ -1126,7 +1085,7 @@ static inline bool pte_is_pinned(struct vm_area_struct *vma, unsigned long addr,
 		return false;
 	if (!is_cow_mapping(vma->vm_flags))
 		return false;
-	if (likely(!atomic_read(&vma->vm_mm->has_pinned)))
+	if (likely(!test_bit(MMF_HAS_PINNED, &vma->vm_mm->flags)))
 		return false;
 	page = vm_normal_page(vma, addr, pte);
 	if (!page)
@@ -1310,6 +1269,7 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
 		return -ESRCH;
 	mm = get_task_mm(task);
 	if (mm) {
+		MA_STATE(mas, &mm->mm_mt, 0, 0);
 		struct mmu_notifier_range range;
 		struct clear_refs_private cp = {
 			.type = type,
@@ -1329,14 +1289,11 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
 		}
 
 		if (type == CLEAR_REFS_SOFT_DIRTY) {
-			for (vma = mm->mmap; vma; vma = vma->vm_next) {
+			mas_for_each(&mas, vma, ULONG_MAX) {
 				if (!(vma->vm_flags & VM_SOFTDIRTY))
 					continue;
-				vm_write_begin(vma);
-				WRITE_ONCE(vma->vm_flags,
-					vma->vm_flags & ~VM_SOFTDIRTY);
+				vma->vm_flags &= ~VM_SOFTDIRTY;
 				vma_set_page_prot(vma);
-				vm_write_end(vma);
 			}
 
 			inc_tlb_flush_pending(mm);
@@ -1344,8 +1301,7 @@ static ssize_t clear_refs_write(struct file *file, const char __user *buf,
 						0, NULL, mm, 0, -1UL);
 			mmu_notifier_invalidate_range_start(&range);
 		}
-		walk_page_range(mm, 0, mm->highest_vm_end, &clear_refs_walk_ops,
-				&cp);
+		walk_page_range(mm, 0, -1, &clear_refs_walk_ops, &cp);
 		if (type == CLEAR_REFS_SOFT_DIRTY) {
 			mmu_notifier_invalidate_range_end(&range);
 			flush_tlb_mm(mm);
@@ -1384,6 +1340,7 @@ struct pagemapread {
 #define PM_PFRAME_MASK		GENMASK_ULL(PM_PFRAME_BITS - 1, 0)
 #define PM_SOFT_DIRTY		BIT_ULL(55)
 #define PM_MMAP_EXCLUSIVE	BIT_ULL(56)
+#define PM_UFFD_WP		BIT_ULL(57)
 #define PM_FILE			BIT_ULL(61)
 #define PM_SWAP			BIT_ULL(62)
 #define PM_PRESENT		BIT_ULL(63)
@@ -1458,22 +1415,34 @@ static pagemap_entry_t pte_to_pagemap_entry(struct pagemapread *pm,
 		page = vm_normal_page(vma, addr, pte);
 		if (pte_soft_dirty(pte))
 			flags |= PM_SOFT_DIRTY;
+		if (pte_uffd_wp(pte))
+			flags |= PM_UFFD_WP;
 	} else if (is_swap_pte(pte)) {
 		swp_entry_t entry;
 		if (pte_swp_soft_dirty(pte))
 			flags |= PM_SOFT_DIRTY;
+		if (pte_swp_uffd_wp(pte))
+			flags |= PM_UFFD_WP;
 		entry = pte_to_swp_entry(pte);
-		if (pm->show_pfn)
+		if (pm->show_pfn) {
+			pgoff_t offset;
+			/*
+			 * For PFN swap offsets, keeping the offset field
+			 * to be PFN only to be compatible with old smaps.
+			 */
+			if (is_pfn_swap_entry(entry))
+				offset = swp_offset_pfn(entry);
+			else
+				offset = swp_offset(entry);
 			frame = swp_type(entry) |
-				(swp_offset(entry) << MAX_SWAPFILES_SHIFT);
-		flags |= PM_SWAP;
-		if (is_migration_entry(entry)) {
-			migration = true;
-			page = migration_entry_to_page(entry);
+			    (offset << MAX_SWAPFILES_SHIFT);
 		}
-
-		if (is_device_private_entry(entry))
-			page = device_private_entry_to_page(entry);
+		flags |= PM_SWAP;
+		migration = is_migration_entry(entry);
+		if (is_pfn_swap_entry(entry))
+			page = pfn_swap_entry_to_page(entry);
+		if (pte_marker_entry_uffd_wp(entry))
+			flags |= PM_UFFD_WP;
 	}
 
 	if (page && !PageAnon(page))
@@ -1512,6 +1481,8 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 			flags |= PM_PRESENT;
 			if (pmd_soft_dirty(pmd))
 				flags |= PM_SOFT_DIRTY;
+			if (pmd_uffd_wp(pmd))
+				flags |= PM_UFFD_WP;
 			if (pm->show_pfn)
 				frame = pmd_pfn(pmd) +
 					((addr & ~PMD_MASK) >> PAGE_SHIFT);
@@ -1522,7 +1493,11 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 			unsigned long offset;
 
 			if (pm->show_pfn) {
-				offset = swp_offset(entry) +
+				if (is_pfn_swap_entry(entry))
+					offset = swp_offset_pfn(entry);
+				else
+					offset = swp_offset(entry);
+				offset = offset +
 					((addr & ~PMD_MASK) >> PAGE_SHIFT);
 				frame = swp_type(entry) |
 					(offset << MAX_SWAPFILES_SHIFT);
@@ -1530,9 +1505,11 @@ static int pagemap_pmd_range(pmd_t *pmdp, unsigned long addr, unsigned long end,
 			flags |= PM_SWAP;
 			if (pmd_swp_soft_dirty(pmd))
 				flags |= PM_SOFT_DIRTY;
+			if (pmd_swp_uffd_wp(pmd))
+				flags |= PM_UFFD_WP;
 			VM_BUG_ON(!is_pmd_migration_entry(pmd));
 			migration = is_migration_entry(entry);
-			page = migration_entry_to_page(entry);
+			page = pfn_swap_entry_to_page(entry);
 		}
 #endif
 
@@ -1605,10 +1582,15 @@ static int pagemap_hugetlb_range(pte_t *ptep, unsigned long hmask,
 		if (page_mapcount(page) == 1)
 			flags |= PM_MMAP_EXCLUSIVE;
 
+		if (huge_pte_uffd_wp(pte))
+			flags |= PM_UFFD_WP;
+
 		flags |= PM_PRESENT;
 		if (pm->show_pfn)
 			frame = pte_pfn(pte) +
 				((addr & ~hmask) >> PAGE_SHIFT);
+	} else if (pte_swp_uffd_wp_any(pte)) {
+		flags |= PM_UFFD_WP;
 	}
 
 	for (; addr != end; addr += PAGE_SIZE) {
@@ -1646,7 +1628,8 @@ static const struct mm_walk_ops pagemap_ops = {
  * Bits 5-54  swap offset if swapped
  * Bit  55    pte is soft-dirty (see Documentation/admin-guide/mm/soft-dirty.rst)
  * Bit  56    page exclusively mapped
- * Bits 57-60 zero
+ * Bit  57    pte is uffd-wp write-protected
+ * Bits 58-60 zero
  * Bit  61    page is file-page or shared-anon
  * Bit  62    page swapped
  * Bit  63    page present
@@ -1833,7 +1816,7 @@ static struct page *can_gather_numa_stats(pte_t pte, struct vm_area_struct *vma,
 		return NULL;
 
 	page = vm_normal_page(vma, addr, pte);
-	if (!page)
+	if (!page || is_zone_device_page(page))
 		return NULL;
 
 	if (PageReserved(page))
@@ -1921,8 +1904,6 @@ static int gather_hugetlb_stats(pte_t *pte, unsigned long hmask,
 		return 0;
 
 	page = pte_page(huge_pte);
-	if (!page)
-		return 0;
 
 	md = walk->private;
 	gather_stats(page, md, pte_dirty(huge_pte), 1);

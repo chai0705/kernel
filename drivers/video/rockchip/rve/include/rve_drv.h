@@ -17,6 +17,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/fb.h>
+#include <linux/fdtable.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -49,7 +50,6 @@
 
 #include <linux/iommu.h>
 #include <linux/iova.h>
-#include <linux/dma-iommu.h>
 #include <linux/dma-map-ops.h>
 #include <linux/hrtimer.h>
 

@@ -783,7 +783,7 @@ static struct snd_soc_dai_driver es7210_dai0 = {
                 .formats = es7210_FORMATS,
         },
         .ops = &es7210_ops,
-        .symmetric_rates = 1,
+        .symmetric_rate = 1,
 };
 #endif
 #if ES7210_CHANNELS_MAX > 4
@@ -797,7 +797,7 @@ static struct snd_soc_dai_driver es7210_dai1 = {
                 .formats = es7210_FORMATS,
         },
         .ops = &es7210_ops,
-        .symmetric_rates = 1,
+        .symmetric_rate = 1,
 };
 #endif
 #if ES7210_CHANNELS_MAX > 8
@@ -811,7 +811,7 @@ static struct snd_soc_dai_driver es7210_dai2 = {
                 .formats = es7210_FORMATS,
         },
         .ops = &es7210_ops,
-        .symmetric_rates = 1,
+        .symmetric_rate = 1,
 };
 #endif
 #if ES7210_CHANNELS_MAX > 12
@@ -825,7 +825,7 @@ static struct snd_soc_dai_driver es7210_dai3 = {
                 .formats = es7210_FORMATS,
         },
         .ops = &es7210_ops,
-        .symmetric_rates = 1,
+        .symmetric_rate = 1,
 };
 #endif
 static struct snd_soc_dai_driver *es7210_dai[] = {
@@ -1689,11 +1689,9 @@ static int es7210_i2c_probe(struct i2c_client *i2c_client,
         return ret;
 }
 
-static  int es7210_i2c_remove(struct i2c_client *client)
+static void es7210_i2c_remove(struct i2c_client *client)
 {
 	sysfs_remove_group(&client->dev.kobj, &es7210_debug_attr_group);
-
-	return 0;
 }
 
 static const struct i2c_device_id es7210_i2c_id[] = {

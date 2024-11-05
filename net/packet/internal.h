@@ -126,7 +126,7 @@ struct packet_sock {
 	__be16			num;
 	struct packet_rollover	*rollover;
 	struct packet_mclist	*mclist;
-	atomic_t		mapped;
+	atomic_long_t		mapped;
 	enum tpacket_versions	tp_version;
 	unsigned int		tp_hdrlen;
 	unsigned int		tp_reserve;
@@ -138,7 +138,7 @@ struct packet_sock {
 	atomic_t		tp_drops ____cacheline_aligned_in_smp;
 };
 
-static struct packet_sock *pkt_sk(struct sock *sk)
+static inline struct packet_sock *pkt_sk(struct sock *sk)
 {
 	return (struct packet_sock *)sk;
 }

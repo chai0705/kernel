@@ -392,7 +392,7 @@ err1:
 	return ret;
 }
 
-static int ep9461e_remove(struct i2c_client *client)
+static void ep9461e_remove(struct i2c_client *client)
 {
 	cancel_delayed_work_sync(&ep9461e->work_i2c_poll);
 	device_remove_file(ep9461e_miscdev.this_device,
@@ -401,8 +401,6 @@ static int ep9461e_remove(struct i2c_client *client)
 			  &dev_attr_hdmiautoswitch);
 	mutex_destroy(&ep9461e->confctl_mutex);
 	misc_deregister(&ep9461e_miscdev);
-
-	return 0;
 }
 
 static const struct of_device_id ep9461e_of_match[] = {

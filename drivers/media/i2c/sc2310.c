@@ -583,7 +583,7 @@ static const struct sc2310_mode supported_modes[] = {
 		.hdr_mode = NO_HDR,
 		.mipi_freq_idx = 0,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		/* 2 to 1 hdr */
@@ -601,10 +601,10 @@ static const struct sc2310_mode supported_modes[] = {
 		.hdr_mode = HDR_X2,
 		.mipi_freq_idx = 1,
 		.bpp = 10,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -734,7 +734,7 @@ static void sc2310_change_mode(struct sc2310 *sc2310, const struct sc2310_mode *
 }
 
 static int sc2310_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -751,7 +751,7 @@ static int sc2310_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc2310->mutex);
 		return -ENOTTY;
@@ -779,7 +779,7 @@ static int sc2310_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc2310_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -788,7 +788,7 @@ static int sc2310_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc2310->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc2310->mutex);
 		return -ENOTTY;
@@ -809,7 +809,7 @@ static int sc2310_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc2310_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -822,7 +822,7 @@ static int sc2310_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc2310_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -874,22 +874,8 @@ static int sc2310_g_frame_interval(struct v4l2_subdev *sd,
 static int sc2310_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
-	struct sc2310 *sc2310 = to_sc2310(sd);
-	const struct sc2310_mode *mode = sc2310->cur_mode;
-	u32 val = 0;
-
-	if (mode->hdr_mode == NO_HDR)
-		val = 1 << (SC2310_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-	if (mode->hdr_mode == HDR_X2)
-		val = 1 << (SC2310_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK |
-		V4L2_MBUS_CSI2_CHANNEL_1;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = SC2310_LANES;
 
 	return 0;
 }
@@ -1497,7 +1483,7 @@ static int sc2310_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc2310_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc2310->mutex);
@@ -1515,7 +1501,7 @@ static int sc2310_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc2310_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -1934,7 +1920,7 @@ static int sc2310_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 sc2310->module_index, facing,
 		 SC2310_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1962,7 +1948,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc2310_remove(struct i2c_client *client)
+static void sc2310_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc2310 *sc2310 = to_sc2310(sd);
@@ -1978,8 +1964,6 @@ static int sc2310_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc2310_power_off(sc2310);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

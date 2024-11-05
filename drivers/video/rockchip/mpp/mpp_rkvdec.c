@@ -12,7 +12,6 @@
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/devfreq.h>
-#include <linux/devfreq_cooling.h>
 #include <linux/gfp.h>
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
@@ -182,10 +181,7 @@ struct rkvdec_dev {
 	struct devfreq *devfreq;
 	struct devfreq *parent_devfreq;
 	struct notifier_block devfreq_nb;
-	struct thermal_cooling_device *devfreq_cooling;
-	struct thermal_zone_device *thermal_zone;
-	u32 static_power_coeff;
-	s32 ts[4];
+	struct rockchip_opp_info opp_info;
 	/* set clk lock */
 	struct mutex set_clk_lock;
 	unsigned int thermal_div;
@@ -329,8 +325,8 @@ static int devfreq_target(struct device *dev,
 	struct dev_pm_opp *opp;
 	unsigned long target_volt, target_freq;
 	unsigned long aclk_rate_hz, core_rate_hz, cabac_rate_hz;
-
-	struct rkvdec_dev *dec = dev_get_drvdata(dev);
+	struct mpp_dev *mpp = dev_get_drvdata(dev);
+	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
 	struct devfreq *devfreq = dec->devfreq;
 	struct devfreq_dev_status *stat = &devfreq->last_status;
 	unsigned long old_clk_rate = stat->current_frequency;
@@ -396,7 +392,8 @@ static int devfreq_target(struct device *dev,
 static int devfreq_get_cur_freq(struct device *dev,
 				unsigned long *freq)
 {
-	struct rkvdec_dev *dec = dev_get_drvdata(dev);
+	struct mpp_dev *mpp = dev_get_drvdata(dev);
+	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
 
 	*freq = clk_get_rate(dec->aclk_info.clk);
 
@@ -406,7 +403,8 @@ static int devfreq_get_cur_freq(struct device *dev,
 static int devfreq_get_dev_status(struct device *dev,
 				  struct devfreq_dev_status *stat)
 {
-	struct rkvdec_dev *dec = dev_get_drvdata(dev);
+	struct mpp_dev *mpp = dev_get_drvdata(dev);
+	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
 	struct devfreq *devfreq = dec->devfreq;
 
 	memcpy(stat, &devfreq->last_status, sizeof(*stat));
@@ -418,105 +416,8 @@ static struct devfreq_dev_profile devfreq_profile = {
 	.target	= devfreq_target,
 	.get_cur_freq = devfreq_get_cur_freq,
 	.get_dev_status	= devfreq_get_dev_status,
+	.is_cooling_device = true,
 };
-
-static unsigned long
-model_static_power(struct devfreq *devfreq,
-		   unsigned long voltage)
-{
-	struct device *dev = devfreq->dev.parent;
-	struct rkvdec_dev *dec = dev_get_drvdata(dev);
-	struct thermal_zone_device *tz = dec->thermal_zone;
-
-	int temperature;
-	unsigned long temp;
-	unsigned long temp_squared, temp_cubed, temp_scaling_factor;
-	const unsigned long voltage_cubed = (voltage * voltage * voltage) >> 10;
-
-	if (!IS_ERR_OR_NULL(tz) && tz->ops->get_temp) {
-		int ret;
-
-		ret = tz->ops->get_temp(tz, &temperature);
-		if (ret) {
-			dev_warn_ratelimited(dev, "ddr thermal zone failed\n");
-			temperature = FALLBACK_STATIC_TEMPERATURE;
-		}
-	} else {
-		temperature = FALLBACK_STATIC_TEMPERATURE;
-	}
-
-	/*
-	 * Calculate the temperature scaling factor. To be applied to the
-	 * voltage scaled power.
-	 */
-	temp = temperature / 1000;
-	temp_squared = temp * temp;
-	temp_cubed = temp_squared * temp;
-	temp_scaling_factor = (dec->ts[3] * temp_cubed)
-	    + (dec->ts[2] * temp_squared) + (dec->ts[1] * temp) + dec->ts[0];
-
-	return (((dec->static_power_coeff * voltage_cubed) >> 20)
-		* temp_scaling_factor) / 1000000;
-}
-
-static struct devfreq_cooling_power cooling_power_data = {
-	.get_static_power = model_static_power,
-	.dyn_power_coeff = 120,
-};
-
-static int power_model_simple_init(struct mpp_dev *mpp)
-{
-	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
-	struct device_node *np = mpp->dev->of_node;
-
-	u32 temp;
-	const char *tz_name;
-	struct device_node *power_model_node;
-
-	power_model_node = of_get_child_by_name(np, "vcodec_power_model");
-	if (!power_model_node) {
-		dev_err(mpp->dev, "could not find power_model node\n");
-		return -ENODEV;
-	}
-
-	if (of_property_read_string(power_model_node,
-				    "thermal-zone",
-				    &tz_name)) {
-		dev_err(mpp->dev, "ts in power_model not available\n");
-		return -EINVAL;
-	}
-
-	dec->thermal_zone = thermal_zone_get_zone_by_name(tz_name);
-	if (IS_ERR(dec->thermal_zone)) {
-		pr_warn("Error getting ddr thermal zone, not yet ready?\n");
-		dec->thermal_zone = NULL;
-		return -EPROBE_DEFER;
-	}
-
-	if (of_property_read_u32(power_model_node,
-				 "static-power-coefficient",
-				 &dec->static_power_coeff)) {
-		dev_err(mpp->dev, "static-power-coefficient not available\n");
-		return -EINVAL;
-	}
-	if (of_property_read_u32(power_model_node,
-				 "dynamic-power-coefficient",
-				 &temp)) {
-		dev_err(mpp->dev, "dynamic-power-coefficient not available\n");
-		return -EINVAL;
-	}
-	cooling_power_data.dyn_power_coeff = (unsigned long)temp;
-
-	if (of_property_read_u32_array(power_model_node,
-				       "ts",
-				       (u32 *)dec->ts,
-				       4)) {
-		dev_err(mpp->dev, "ts in power_model not available\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
 
 static int devfreq_notifier_call(struct notifier_block *nb,
 				 unsigned long event,
@@ -558,7 +459,7 @@ static int fill_scaling_list_pps(struct rkvdec_task *task,
 				 int pps_info_size, int sub_addr_offset)
 {
 	struct dma_buf *dmabuf = NULL;
-	void *vaddr = NULL;
+	struct iosys_map map;
 	u8 *pps = NULL;
 	u32 scaling_fd = 0;
 	int ret = 0;
@@ -573,16 +474,15 @@ static int fill_scaling_list_pps(struct rkvdec_task *task,
 	ret = dma_buf_begin_cpu_access(dmabuf, DMA_FROM_DEVICE);
 	if (ret) {
 		mpp_err("can't access the pps buffer\n");
-		goto done;
+		goto access_failed;
 	}
 
-	vaddr = dma_buf_vmap(dmabuf);
-	if (!vaddr) {
+	ret = dma_buf_vmap(dmabuf, &map);
+	if (ret) {
 		mpp_err("can't access the pps buffer\n");
-		ret = -EIO;
-		goto done;
+		goto vmap_failed;
 	}
-	pps = vaddr + offset;
+	pps = map.vaddr + offset;
 	/* NOTE: scaling buffer in pps, have no offset */
 	memcpy(&scaling_fd, pps + base, sizeof(scaling_fd));
 	scaling_fd = le32_to_cpu(scaling_fd);
@@ -596,7 +496,7 @@ static int fill_scaling_list_pps(struct rkvdec_task *task,
 		if (IS_ERR(mem_region)) {
 			mpp_err("scaling list fd %d attach failed\n", scaling_fd);
 			ret = PTR_ERR(mem_region);
-			goto done;
+			goto task_fd_failed;
 		}
 
 		tmp = mem_region->iova & 0xffffffff;
@@ -610,9 +510,11 @@ static int fill_scaling_list_pps(struct rkvdec_task *task,
 			memcpy(pps + base, &tmp, sizeof(tmp));
 	}
 
-done:
-	dma_buf_vunmap(dmabuf, vaddr);
+task_fd_failed:
+	dma_buf_vunmap(dmabuf, &map);
+vmap_failed:
 	dma_buf_end_cpu_access(dmabuf, DMA_FROM_DEVICE);
+access_failed:
 	dma_buf_put(dmabuf);
 
 	return ret;
@@ -1326,7 +1228,7 @@ static int rkvdec_devfreq_remove(struct mpp_dev *mpp)
 	struct rkvdec_dev *dec = to_rkvdec_dev(mpp);
 
 	devfreq_unregister_opp_notifier(mpp->dev, dec->devfreq);
-	dev_pm_opp_of_remove_table(mpp->dev);
+	rockchip_uninit_opp_table(mpp->dev, &dec->opp_info);
 
 	return 0;
 }
@@ -1365,42 +1267,28 @@ static int rkvdec_devfreq_init(struct mpp_dev *mpp)
 		return 0;
 	}
 
-	ret = rockchip_init_opp_table(mpp->dev, NULL,
-				      "rkvdec_leakage", "vcodec");
+	ret = rockchip_init_opp_table(mpp->dev, &dec->opp_info, NULL, "vcodec");
 	if (ret) {
 		dev_err(mpp->dev, "Failed to init_opp_table\n");
-		goto done;
+		return ret;
 	}
 	dec->devfreq = devm_devfreq_add_device(mpp->dev, &devfreq_profile,
 					       "userspace", NULL);
 	if (IS_ERR(dec->devfreq)) {
 		ret = PTR_ERR(dec->devfreq);
-		goto done;
+		return ret;
 	}
 
 	stat = &dec->devfreq->last_status;
 	stat->current_frequency = clk_get_rate(dec->aclk_info.clk);
 
 	ret = devfreq_register_opp_notifier(mpp->dev, dec->devfreq);
-	if (ret)
-		goto done;
-
-	/* power simplle init */
-	ret = power_model_simple_init(mpp);
-	if (!ret && dec->devfreq) {
-		dec->devfreq_cooling =
-			of_devfreq_cooling_register_power(mpp->dev->of_node,
-							  dec->devfreq,
-							  &cooling_power_data);
-		if (IS_ERR_OR_NULL(dec->devfreq_cooling)) {
-			ret = -ENXIO;
-			dev_err(mpp->dev, "Failed to register cooling\n");
-			goto done;
-		}
+	if (ret < 0) {
+		dev_err(mpp->dev, "failed to register opp notifier\n");
+		return ret;
 	}
 
-done:
-	return ret;
+	return 0;
 }
 #else
 static inline int rkvdec_devfreq_remove(struct mpp_dev *mpp)
@@ -1998,7 +1886,7 @@ static int rkvdec_probe(struct platform_device *pdev)
 
 	ret = devm_request_threaded_irq(dev, mpp->irq,
 					mpp_dev_irq,
-					mpp_dev_isr_sched,
+					NULL,
 					IRQF_SHARED,
 					dev_name(dev), mpp);
 	if (ret) {
@@ -2018,11 +1906,11 @@ static int rkvdec_probe(struct platform_device *pdev)
 static int rkvdec_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct rkvdec_dev *dec = platform_get_drvdata(pdev);
+	struct mpp_dev *mpp = platform_get_drvdata(pdev);
 
 	dev_info(dev, "remove device\n");
-	mpp_dev_remove(&dec->mpp);
-	rkvdec_procfs_remove(&dec->mpp);
+	mpp_dev_remove(mpp);
+	rkvdec_procfs_remove(mpp);
 
 	return 0;
 }

@@ -526,7 +526,7 @@ static int pisp_dmy_probe(struct i2c_client *client,
 	return 0;
 }
 
-static int pisp_dmy_remove(struct i2c_client *client)
+static void pisp_dmy_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct pisp_dmy *pisp_dmy = to_pisp_dmy(sd);
@@ -537,8 +537,6 @@ static int pisp_dmy_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__pisp_dmy_power_off(pisp_dmy);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

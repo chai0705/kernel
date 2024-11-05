@@ -73,12 +73,10 @@ asmlinkage void secondary_start_kernel(void);
 
 /*
  * Initial data for bringing up a secondary CPU.
- * @stack  - sp for the secondary CPU
  * @status - Result passed back from the secondary CPU to
  *           indicate failure.
  */
 struct secondary_data {
-	void *stack;
 	struct task_struct *task;
 	long status;
 };
@@ -89,8 +87,6 @@ extern void secondary_entry(void);
 
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
-extern int nr_ipi_get(void);
-extern struct irq_desc **ipi_desc_get(void);
 
 #ifdef CONFIG_ARM64_ACPI_PARKING_PROTOCOL
 extern void arch_send_wakeup_ipi_mask(const struct cpumask *mask);
@@ -147,6 +143,7 @@ bool cpus_are_stuck_in_kernel(void);
 
 extern void crash_smp_send_stop(void);
 extern bool smp_crash_stop_failed(void);
+extern void panic_smp_self_stop(void);
 
 #endif /* ifndef __ASSEMBLY__ */
 

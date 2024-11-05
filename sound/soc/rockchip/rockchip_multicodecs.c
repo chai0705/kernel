@@ -41,6 +41,7 @@
 #define DRV_NAME "rk-multicodecs"
 #define WAIT_CARDS	(SNDRV_CARDS - 1)
 #define DEFAULT_MCLK_FS	256
+#define DAI_FMT_BASE	(SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF)
 
 struct adc_keys_button {
 	u32 voltage;
@@ -57,7 +58,7 @@ struct input_dev_poller {
 
 struct multicodecs_data {
 	struct snd_soc_card snd_card;
-	struct snd_soc_dai_link dai_link;
+	struct snd_soc_dai_link dai_link[3];
 	struct snd_soc_jack *jack_headset;
 	struct gpio_desc *hp_ctl_gpio;
 	struct gpio_desc *spk_ctl_gpio;
@@ -70,6 +71,8 @@ struct multicodecs_data {
 	u32 num_keys;
 	u32 last_key;
 	u32 keyup_voltage;
+	u32 pre_poweron_delayms;
+	u32 post_powerdown_delayms;
 	const struct adc_keys_button *map;
 	struct input_dev *input;
 	struct input_dev_poller *poller;
@@ -274,10 +277,14 @@ static int mc_hp_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		if (mc_data->pre_poweron_delayms)
+			msleep(mc_data->pre_poweron_delayms);
 		gpiod_set_value_cansleep(mc_data->hp_ctl_gpio, 1);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		gpiod_set_value_cansleep(mc_data->hp_ctl_gpio, 0);
+		if (mc_data->post_powerdown_delayms)
+			msleep(mc_data->post_powerdown_delayms);
 		break;
 	default:
 		return 0;
@@ -295,38 +302,58 @@ static int mc_spk_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
+		if (mc_data->pre_poweron_delayms)
+			msleep(mc_data->pre_poweron_delayms);
 		gpiod_set_value_cansleep(mc_data->spk_ctl_gpio, 1);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
 		gpiod_set_value_cansleep(mc_data->spk_ctl_gpio, 0);
+		if (mc_data->post_powerdown_delayms)
+			msleep(mc_data->post_powerdown_delayms);
 		break;
 	default:
 		return 0;
-
 	}
 
 	return 0;
 }
 
 static const struct snd_soc_dapm_widget mc_dapm_widgets[] = {
-
-	SND_SOC_DAPM_HP("Headphone", NULL),
-	SND_SOC_DAPM_SPK("Speaker", NULL),
+	SND_SOC_DAPM_HP("Headphone", mc_hp_event),
+	SND_SOC_DAPM_SPK("Speaker", mc_spk_event),
+	SND_SOC_DAPM_LINE("Line Out Jack", NULL),
+	SND_SOC_DAPM_LINE("Line In Jack", NULL),
 	SND_SOC_DAPM_MIC("Main Mic", NULL),
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
-	SND_SOC_DAPM_SUPPLY("Speaker Power",
-			    SND_SOC_NOPM, 0, 0,
-			    mc_spk_event,
-			    SND_SOC_DAPM_POST_PMU |
-			    SND_SOC_DAPM_PRE_PMD),
-	SND_SOC_DAPM_SUPPLY("Headphone Power",
-			    SND_SOC_NOPM, 0, 0,
-			    mc_hp_event,
-			    SND_SOC_DAPM_POST_PMU |
-			    SND_SOC_DAPM_PRE_PMD),
+	SND_SOC_DAPM_SUPPLY("Speaker Power", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_SUPPLY("Headphone Power", SND_SOC_NOPM, 0, 0, NULL, 0),
 };
 
+static int mc_switch_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
+	struct multicodecs_data *mc_data = snd_soc_card_get_drvdata(card);
+	struct soc_mixer_control *mc = (struct soc_mixer_control *)kcontrol->private_value;
+	struct gpio_desc *gpio = mc->reg == 1 ? mc_data->hp_ctl_gpio : mc_data->spk_ctl_gpio;
+
+	ucontrol->value.integer.value[0] = gpiod_get_value_cansleep(gpio);
+	return 0;
+}
+
+static int mc_switch_put(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
+	struct multicodecs_data *mc_data = snd_soc_card_get_drvdata(card);
+	struct soc_mixer_control *mc = (struct soc_mixer_control *)kcontrol->private_value;
+	struct gpio_desc *gpio = mc->reg == 1 ? mc_data->hp_ctl_gpio : mc_data->spk_ctl_gpio;
+
+	gpiod_set_value_cansleep(gpio, ucontrol->value.integer.value[0] ? 1 : 0);
+	return 0;
+}
+
 static const struct snd_kcontrol_new mc_controls[] = {
+	SOC_SINGLE_EXT("spk switch", 0, 0, 1, 0, mc_switch_get, mc_switch_put),
+	SOC_SINGLE_EXT("hp switch", 1, 0, 1, 0, mc_switch_get, mc_switch_put),
 	SOC_DAPM_PIN_SWITCH("Headphone"),
 	SOC_DAPM_PIN_SWITCH("Speaker"),
 	SOC_DAPM_PIN_SWITCH("Main Mic"),
@@ -419,10 +446,10 @@ static int rk_dailink_init(struct snd_soc_pcm_runtime *rtd)
 	if (!zones)
 		return -ENOMEM;
 
-	ret = snd_soc_card_jack_new(card, "Headset",
-				    SND_JACK_HEADSET,
-				    jack_headset,
-				    pins, ARRAY_SIZE(jack_pins));
+	ret = snd_soc_card_jack_new_pins(card, "Headset",
+					 SND_JACK_HEADSET,
+					 jack_headset,
+					 pins, ARRAY_SIZE(jack_pins));
 	if (ret)
 		return ret;
 	ret = snd_soc_jack_add_zones(jack_headset, ARRAY_SIZE(headset_zones), zones);
@@ -467,17 +494,15 @@ static int rk_multicodecs_parse_daifmt(struct device_node *node,
 				       struct multicodecs_data *mc_data,
 				       const char *prefix)
 {
-	struct snd_soc_dai_link *dai_link = &mc_data->dai_link;
+	struct snd_soc_dai_link *dai_link = &mc_data->dai_link[0];
 	struct device_node *bitclkmaster = NULL;
 	struct device_node *framemaster = NULL;
 	unsigned int daifmt;
 
-	daifmt = snd_soc_of_parse_daifmt(node, prefix,
-					 &bitclkmaster, &framemaster);
+	daifmt = snd_soc_daifmt_parse_format(node, prefix);
 
-	daifmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
-
-	if (strlen(prefix) && !bitclkmaster && !framemaster) {
+	snd_soc_daifmt_parse_clock_provider_as_phandle(node, prefix, &bitclkmaster, &framemaster);
+	if (!bitclkmaster && !framemaster) {
 		/*
 		 * No dai-link level and master setting was not found from
 		 * sound node level, revert back to legacy DT parsing and
@@ -485,15 +510,10 @@ static int rk_multicodecs_parse_daifmt(struct device_node *node,
 		 */
 		pr_debug("%s: Revert to legacy daifmt parsing\n", __func__);
 
-		daifmt = snd_soc_of_parse_daifmt(codec, NULL, NULL, NULL) |
-			(daifmt & ~SND_SOC_DAIFMT_CLOCK_MASK);
+		daifmt |= snd_soc_daifmt_parse_clock_provider_as_flag(codec, NULL);
 	} else {
-		if (codec == bitclkmaster)
-			daifmt |= (codec == framemaster) ?
-				SND_SOC_DAIFMT_CBM_CFM : SND_SOC_DAIFMT_CBM_CFS;
-		else
-			daifmt |= (codec == framemaster) ?
-				SND_SOC_DAIFMT_CBS_CFM : SND_SOC_DAIFMT_CBS_CFS;
+		daifmt |= snd_soc_daifmt_clock_provider_from_bitmap(
+				((codec == bitclkmaster) << 4) | (codec == framemaster));
 	}
 
 	/*
@@ -574,17 +594,56 @@ static struct snd_soc_ops rk_ops = {
 	.hw_params = rk_multicodecs_hw_params,
 };
 
+SND_SOC_DAILINK_DEFS(hifi,
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+
+SND_SOC_DAILINK_DEFS(hifi_fe,
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_DUMMY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()));
+
+SND_SOC_DAILINK_DEFS(hifi_be,
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_EMPTY()),
+	DAILINK_COMP_ARRAY(COMP_DUMMY()));
+
+static const struct snd_soc_dai_link rk_multicodecs_card_dai[] = {
+	/* Default ASoC DAI Link*/
+	{
+		.name = "HiFi",
+		.stream_name = "HiFi",
+		.ops = &rk_ops,
+		SND_SOC_DAILINK_REG(hifi),
+	},
+	/* DPCM Link between Front-End and Back-End (Optional) */
+	{
+		.name = "HiFi-ASRC-FE",
+		.stream_name = "HiFi-ASRC-FE",
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.dynamic = 1,
+		SND_SOC_DAILINK_REG(hifi_fe),
+	},
+	{
+		.name = "HiFi-ASRC-BE",
+		.stream_name = "HiFi-ASRC-BE",
+		.ops = &rk_ops,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.no_pcm = 1,
+		SND_SOC_DAILINK_REG(hifi_be),
+	},
+};
+
 static int rk_multicodecs_probe(struct platform_device *pdev)
 {
 	struct snd_soc_card *card;
-	struct device_node *np = pdev->dev.of_node;
-	struct snd_soc_dai_link *link;
-	struct snd_soc_dai_link_component *cpus;
-	struct snd_soc_dai_link_component *platforms;
+	struct device_node *np = pdev->dev.of_node, *node, *asrc_np;
 	struct snd_soc_dai_link_component *codecs;
 	struct multicodecs_data *mc_data;
 	struct of_phandle_args args;
-	struct device_node *node;
 	struct input_dev *input;
 	u32 val;
 	int count, value, irq;
@@ -601,13 +660,7 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	if (!mc_data)
 		return -ENOMEM;
 
-	cpus = devm_kzalloc(&pdev->dev, sizeof(*cpus), GFP_KERNEL);
-	if (!cpus)
-		return -ENOMEM;
-
-	platforms = devm_kzalloc(&pdev->dev, sizeof(*platforms), GFP_KERNEL);
-	if (!platforms)
-		return -ENOMEM;
+	memcpy(mc_data->dai_link, rk_multicodecs_card_dai, sizeof(mc_data->dai_link));
 
 	card = &mc_data->snd_card;
 	card->dev = &pdev->dev;
@@ -617,18 +670,15 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	if (ret < 0)
 		return ret;
 
-	link = &mc_data->dai_link;
-	link->name = "dailink-multicodecs";
-	link->stream_name = link->name;
-	link->init = rk_dailink_init;
-	link->ops = &rk_ops;
-	link->cpus = cpus;
-	link->platforms	= platforms;
-	link->num_cpus	= 1;
-	link->num_platforms = 1;
-	link->ignore_pmdown_time = 1;
+	mc_data->dai_link[0].name = "dailink-multicodecs";
+	mc_data->dai_link[0].stream_name = mc_data->dai_link[0].name;
+	mc_data->dai_link[0].init = rk_dailink_init;
+	mc_data->dai_link[0].ops = &rk_ops;
+	mc_data->dai_link[0].num_cpus	= 1;
+	mc_data->dai_link[0].num_platforms = 1;
+	mc_data->dai_link[0].ignore_pmdown_time = 1;
 
-	card->dai_link = link;
+	card->dai_link = mc_data->dai_link;
 	card->num_links = 1;
 	card->dapm_widgets = mc_dapm_widgets;
 	card->num_dapm_widgets = ARRAY_SIZE(mc_dapm_widgets);
@@ -657,8 +707,8 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	if (!codecs)
 		return -ENOMEM;
 
-	link->codecs = codecs;
-	link->num_codecs = idx;
+	mc_data->dai_link[0].codecs = codecs;
+	mc_data->dai_link[0].num_codecs = idx;
 	idx = 0;
 	for (i = 0; i < count; i++) {
 		node = of_parse_phandle(np, "rockchip,codec", i);
@@ -682,15 +732,34 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	/* Only reference the codecs[0].of_node which maybe as master. */
 	rk_multicodecs_parse_daifmt(np, codecs[0].of_node, mc_data, prefix);
 
-	link->cpus->of_node = of_parse_phandle(np, "rockchip,cpu", 0);
-	if (!link->cpus->of_node)
+	mc_data->dai_link[0].cpus->of_node = of_parse_phandle(np, "rockchip,cpu", 0);
+	if (!mc_data->dai_link[0].cpus->of_node)
 		return -ENODEV;
 
-	link->platforms->of_node = link->cpus->of_node;
+	mc_data->dai_link[0].platforms->of_node = mc_data->dai_link[0].cpus->of_node;
+
+	asrc_np = of_parse_phandle(np, "rockchip,asrc", 0);
+	if (asrc_np) {
+		mc_data->dai_link[1].cpus->of_node = asrc_np;
+		mc_data->dai_link[1].platforms->of_node = asrc_np;
+		mc_data->dai_link[1].num_cpus = 1;
+		mc_data->dai_link[1].num_platforms = 1;
+
+		/* Support multicodec in future */
+		mc_data->dai_link[2].codecs->dai_name = "dummy_codec";
+		mc_data->dai_link[2].codecs->of_node = of_parse_phandle(np, "rockchip,codec", 0);
+		mc_data->dai_link[2].cpus->of_node = mc_data->dai_link[0].cpus->of_node;
+
+		card->num_links = 3;
+	}
 
 	mc_data->mclk_fs = DEFAULT_MCLK_FS;
 	if (!of_property_read_u32(np, "rockchip,mclk-fs", &val))
 		mc_data->mclk_fs = val;
+	if (!of_property_read_u32(np, "rockchip,pre-power-on-delay-ms", &val))
+		mc_data->pre_poweron_delayms = val;
+	if (!of_property_read_u32(np, "rockchip,post-power-down-delay-ms", &val))
+		mc_data->post_powerdown_delayms = val;
 
 	mc_data->codec_hp_det =
 		of_property_read_bool(np, "rockchip,codec-hp-det");
@@ -698,10 +767,13 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	mc_data->adc = devm_iio_channel_get(&pdev->dev, "adc-detect");
 
 	if (IS_ERR(mc_data->adc)) {
-		if (PTR_ERR(mc_data->adc) != -EPROBE_DEFER) {
-			mc_data->adc = NULL;
-			dev_warn(&pdev->dev, "Failed to get ADC channel");
+		if (PTR_ERR(mc_data->adc) == -EPROBE_DEFER) {
+			dev_warn(&pdev->dev, "deferred by saradc not ready\n");
+			return -EPROBE_DEFER;
 		}
+
+		mc_data->adc = NULL;
+		dev_warn(&pdev->dev, "Has no ADC channel\n");
 	} else {
 		if (mc_data->adc->channel->type != IIO_VOLTAGE)
 			return -EINVAL;
@@ -789,7 +861,7 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 	snd_soc_of_parse_audio_routing(card, "rockchip,audio-routing");
 
 	snd_soc_card_set_drvdata(card, mc_data);
-	platform_set_drvdata(pdev, card);
+	platform_set_drvdata(pdev, mc_data);
 
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret) {
@@ -807,8 +879,7 @@ static int rk_multicodecs_probe(struct platform_device *pdev)
 
 static int rk_multicodec_remove(struct platform_device *pdev)
 {
-	struct snd_soc_card *card = platform_get_drvdata(pdev);
-	struct multicodecs_data *mc_data = snd_soc_card_get_drvdata(card);
+	struct multicodecs_data *mc_data = platform_get_drvdata(pdev);
 
 	cancel_delayed_work_sync(&mc_data->handler);
 
@@ -817,8 +888,7 @@ static int rk_multicodec_remove(struct platform_device *pdev)
 
 static void rk_multicodec_shutdown(struct platform_device *pdev)
 {
-	struct snd_soc_card *card = platform_get_drvdata(pdev);
-	struct multicodecs_data *mc_data = snd_soc_card_get_drvdata(card);
+	struct multicodecs_data *mc_data = platform_get_drvdata(pdev);
 
 	cancel_delayed_work_sync(&mc_data->handler);
 }

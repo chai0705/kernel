@@ -115,7 +115,7 @@ struct rkisp1_sensor_info {
 	struct v4l2_subdev *sd;
 	struct v4l2_mbus_config mbus;
 	struct v4l2_subdev_format fmt;
-	struct v4l2_subdev_pad_config cfg;
+	struct v4l2_subdev_state state;
 };
 
 /*

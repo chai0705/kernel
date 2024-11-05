@@ -118,7 +118,7 @@
 			50  254  2
 		>;
 		nvmem-cells = <&cpu_leakage>;
-		nvmem-cell-names = "cpu_leakage";
+		nvmem-cell-names = "leakage";
 
 		opp-216000000 {
 			opp-hz = /bits/ 64 <216000000>;
@@ -1182,6 +1182,7 @@
 		interrupts = <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&spi0m0_tx &spi0m0_rx &spi0m0_clk &spi0m0_cs0 &spi0m0_cs1>;
+		clocks = <&cru SCLK_SPI0>, <&cru PCLK_SPI0>;
 		clock-names = "spiclk", "apb_pclk";
 		dmas = <&pdma 8>, <&pdma 9>;
 		dma-names = "tx", "rx";

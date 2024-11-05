@@ -295,9 +295,9 @@ static int proximity_ap321xx_probe(struct i2c_client *client,
 	return sensor_register_device(client, NULL, devid, &proximity_ap321xx_ops);
 }
 
-static int proximity_ap321xx_remove(struct i2c_client *client)
+static void proximity_ap321xx_remove(struct i2c_client *client)
 {
-	return sensor_unregister_device(client, NULL, &proximity_ap321xx_ops);
+	sensor_unregister_device(client, NULL, &proximity_ap321xx_ops);
 }
 
 static const struct i2c_device_id proximity_ap321xx_id[] = {
@@ -307,7 +307,7 @@ static const struct i2c_device_id proximity_ap321xx_id[] = {
 
 static struct i2c_driver proximity_ap321xx_driver = {
 	.probe = proximity_ap321xx_probe,
-	.remove = proximity_ap321xx_remove,
+	.remove = (void *)proximity_ap321xx_remove,
 	.shutdown = sensor_shutdown,
 	.id_table = proximity_ap321xx_id,
 	.driver = {

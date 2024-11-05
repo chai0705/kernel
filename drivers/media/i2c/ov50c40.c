@@ -5745,12 +5745,12 @@ static const struct ov50c40_mode supported_modes_dphy[] = {
 		.exp_def = 0x0840,
 		.hts_def = 0x41a * 4,
 		.vts_def = 0x0c66,
-		.mipi_freq_idx = 2,
+		.mipi_freq_idx = 3,
 		.bpp = 10,
 		.reg_list = ov50c40_10bit_4096x3072_dphy_30fps_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -5768,7 +5768,7 @@ static const struct ov50c40_mode supported_modes_dphy[] = {
 		.reg_list = ov50c40_10bit_8192x6144_dphy_12fps_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 #ifdef DEBUG
 	{
@@ -5787,7 +5787,7 @@ static const struct ov50c40_mode supported_modes_dphy[] = {
 		.reg_list = ov50c40_10bit_4096x3072_dphy_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -5805,7 +5805,7 @@ static const struct ov50c40_mode supported_modes_dphy[] = {
 		.reg_list = ov50c40_10bit_8192x6144_dphy_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -5818,11 +5818,11 @@ static const struct ov50c40_mode supported_modes_dphy[] = {
 		.exp_def = 0x0840,
 		.hts_def = 0x3e8 * 8,
 		.vts_def = 0x0d05,
-		.mipi_freq_idx = 2,
+		.mipi_freq_idx = 3,
 		.bpp = 10,
 		.reg_list = ov50c40_10bit_4096x3072_dphy_30fps_nopd_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 #endif
 };
@@ -5844,7 +5844,7 @@ static const struct ov50c40_mode supported_modes_cphy[] = {
 		.reg_list = ov50c40_10bit_4096x3072_cphy_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -5862,7 +5862,7 @@ static const struct ov50c40_mode supported_modes_cphy[] = {
 		.reg_list = ov50c40_10bit_4096x3072_cphy_30fps_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_SGBRG10_1X10,
@@ -5880,7 +5880,7 @@ static const struct ov50c40_mode supported_modes_cphy[] = {
 		.reg_list = ov50c40_10bit_8192x6144_cphy_12fps_regs,
 		.hdr_mode = NO_HDR,
 		.spd = &ov50c40_spd,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+		.vc[PAD0] = 0,
 	},
 };
 
@@ -6011,7 +6011,7 @@ ov50c40_find_best_fit(struct ov50c40 *ov50c40, struct v4l2_subdev_format *fmt)
 }
 
 static int ov50c40_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -6029,7 +6029,7 @@ static int ov50c40_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ov50c40->mutex);
 		return -ENOTTY;
@@ -6059,7 +6059,7 @@ static int ov50c40_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov50c40_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -6068,7 +6068,7 @@ static int ov50c40_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ov50c40->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ov50c40->mutex);
 		return -ENOTTY;
@@ -6085,7 +6085,7 @@ static int ov50c40_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ov50c40_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -6098,7 +6098,7 @@ static int ov50c40_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ov50c40_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -6146,15 +6146,9 @@ static int ov50c40_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
-	u32 lane_num = ov50c40->bus_cfg.bus.mipi_csi2.num_data_lanes;
-	u32 val = 0;
-
-	val = 1 << (lane_num - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
 
 	config->type = ov50c40->bus_cfg.bus_type;
-	config->flags = val;
+	config->bus.mipi_csi2 = ov50c40->bus_cfg.bus.mipi_csi2;
 
 	return 0;
 }
@@ -6203,7 +6197,7 @@ static void ov50c40_get_otp(struct otp_info *otp,
 		inf->pdaf.flag = 1;
 		inf->pdaf.gainmap_width = otp->pdaf_data.gainmap_width;
 		inf->pdaf.gainmap_height = otp->pdaf_data.gainmap_height;
-		//inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
+		inf->pdaf.pd_offset = otp->pdaf_data.pd_offset;
 		inf->pdaf.dcc_mode = otp->pdaf_data.dcc_mode;
 		inf->pdaf.dcc_dir = otp->pdaf_data.dcc_dir;
 		inf->pdaf.dccmap_width = otp->pdaf_data.dccmap_width;
@@ -6261,7 +6255,7 @@ static int ov50c40_get_channel_info(struct ov50c40 *ov50c40, struct rkmodule_cha
 		return -EINVAL;
 
 	if (ch_info->index == ov50c40->spd_id && mode->spd) {
-		ch_info->vc = V4L2_MBUS_CSI2_CHANNEL_1;
+		ch_info->vc = 1;
 		ch_info->width = mode->spd->width;
 		ch_info->height = mode->spd->height;
 		ch_info->bus_fmt = mode->spd->bus_fmt;
@@ -6695,7 +6689,7 @@ static int ov50c40_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ov50c40_mode *def_mode = &ov50c40->support_modes[0];
 
 	mutex_lock(&ov50c40->mutex);
@@ -6713,7 +6707,7 @@ static int ov50c40_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int ov50c40_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -6734,7 +6728,7 @@ static int ov50c40_enum_frame_interval(struct v4l2_subdev *sd,
 #define DST_WIDTH 4096
 #define DST_HEIGHT 2304
 static int ov50c40_get_selection(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_selection *sel)
 {
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -7191,7 +7185,7 @@ continue_probe:
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ov50c40->module_index, facing,
 		 OV50C40_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -7216,7 +7210,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ov50c40_remove(struct i2c_client *client)
+static void ov50c40_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov50c40 *ov50c40 = to_ov50c40(sd);
@@ -7232,8 +7226,6 @@ static int ov50c40_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ov50c40_power_off(ov50c40);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

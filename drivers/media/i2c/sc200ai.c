@@ -625,9 +625,8 @@ static const struct sc200ai_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = sc200ai_linear_10_1920x1080_60fps_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-	},
-	{
+		.vc[PAD0] = 0,
+	}, {
 		.width = 1920,
 		.height = 1080,
 		.max_fps = {
@@ -640,9 +639,8 @@ static const struct sc200ai_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = sc200ai_linear_10_1920x1080_30fps_regs,
 		.hdr_mode = NO_HDR,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-	},
-	{
+		.vc[PAD0] = 0,
+	}, {
 		.width = 1920,
 		.height = 1080,
 		.max_fps = {
@@ -655,10 +653,10 @@ static const struct sc200ai_mode supported_modes[] = {
 		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
 		.reg_list = sc200ai_hdr_10_1920x1080_regs,
 		.hdr_mode = HDR_X2,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_0,//L->csi wr0
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_1,//M->csi wr2
+		.vc[PAD0] = 1,
+		.vc[PAD1] = 0,//L->csi wr0
+		.vc[PAD2] = 1,
+		.vc[PAD3] = 1,//M->csi wr2
 	},
 };
 
@@ -1003,7 +1001,7 @@ sc200ai_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int sc200ai_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc200ai *sc200ai = to_sc200ai(sd);
@@ -1019,7 +1017,7 @@ static int sc200ai_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&sc200ai->mutex);
 		return -ENOTTY;
@@ -1043,7 +1041,7 @@ static int sc200ai_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc200ai_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct sc200ai *sc200ai = to_sc200ai(sd);
@@ -1052,7 +1050,7 @@ static int sc200ai_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&sc200ai->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&sc200ai->mutex);
 		return -ENOTTY;
@@ -1074,7 +1072,7 @@ static int sc200ai_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int sc200ai_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct sc200ai *sc200ai = to_sc200ai(sd);
@@ -1087,7 +1085,7 @@ static int sc200ai_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int sc200ai_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1138,19 +1136,8 @@ static int sc200ai_g_frame_interval(struct v4l2_subdev *sd,
 static int sc200ai_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *config)
 {
-	struct sc200ai *sc200ai = to_sc200ai(sd);
-	const struct sc200ai_mode *mode = sc200ai->cur_mode;
-	u32 val = 1 << (SC200AI_LANES - 1) |
-		V4L2_MBUS_CSI2_CHANNEL_0 |
-		V4L2_MBUS_CSI2_CONTINUOUS_CLOCK;
-
-	if (mode->hdr_mode != NO_HDR)
-		val |= V4L2_MBUS_CSI2_CHANNEL_1;
-	if (mode->hdr_mode == HDR_X3)
-		val |= V4L2_MBUS_CSI2_CHANNEL_2;
-
 	config->type = V4L2_MBUS_CSI2_DPHY;
-	config->flags = val;
+	config->bus.mipi_csi2.num_data_lanes = SC200AI_LANES;
 
 	return 0;
 }
@@ -1663,7 +1650,7 @@ static int sc200ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct sc200ai *sc200ai = to_sc200ai(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct sc200ai_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&sc200ai->mutex);
@@ -1681,7 +1668,7 @@ static int sc200ai_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 #endif
 
 static int sc200ai_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -2115,7 +2102,7 @@ static int sc200ai_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 sc200ai->module_index, facing,
 		 SC200AI_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -2144,7 +2131,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int sc200ai_remove(struct i2c_client *client)
+static void sc200ai_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct sc200ai *sc200ai = to_sc200ai(sd);
@@ -2162,8 +2149,6 @@ static int sc200ai_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__sc200ai_power_off(sc200ai);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

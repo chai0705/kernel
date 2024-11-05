@@ -304,13 +304,11 @@ static int max96745_i2c_probe(struct i2c_client *client)
 	return 0;
 }
 
-static int max96745_i2c_remove(struct i2c_client *client)
+static void max96745_i2c_remove(struct i2c_client *client)
 {
 	struct max96745 *max96745 = i2c_get_clientdata(client);
 
 	i2c_mux_del_adapters(max96745->muxc);
-
-	return 0;
 }
 
 static void max96745_i2c_shutdown(struct i2c_client *client)

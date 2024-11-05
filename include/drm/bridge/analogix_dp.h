@@ -17,6 +17,7 @@ enum analogix_dp_devtype {
 	RK3288_DP,
 	RK3399_EDP,
 	RK3568_EDP,
+	RK3576_EDP,
 	RK3588_EDP,
 };
 
@@ -26,6 +27,7 @@ static inline bool is_rockchip(enum analogix_dp_devtype type)
 	case RK3288_DP:
 	case RK3399_EDP:
 	case RK3568_EDP:
+	case RK3576_EDP:
 	case RK3588_EDP:
 		return true;
 	default:
@@ -43,10 +45,13 @@ struct analogix_dp_plat_data {
 	bool ssc;
 
 	bool split_mode;
+	bool dual_channel_mode;
 
 	/* split with other display interface */
 	bool dual_connector_split;
 	bool left_display;
+
+	u8 max_bpc;
 
 	struct analogix_dp_device *left;
 	struct analogix_dp_device *right;
@@ -61,6 +66,12 @@ struct analogix_dp_plat_data {
 			 struct drm_connector *);
 	void (*convert_to_split_mode)(struct drm_display_mode *);
 	void (*convert_to_origin_mode)(struct drm_display_mode *);
+};
+
+struct analogix_dp_output_format {
+	u32 bus_format;
+	u32 color_format;
+	u8 bpc;
 };
 
 int analogix_dp_resume(struct analogix_dp_device *dp);
@@ -86,5 +97,6 @@ int analogix_dp_audio_get_eld(struct analogix_dp_device *dp,
 			      u8 *buf, size_t len);
 int analogix_dp_loader_protect(struct analogix_dp_device *dp);
 void analogix_dp_disable(struct analogix_dp_device *dp);
+const struct analogix_dp_output_format *analogix_dp_get_output_format(u32 bus_format);
 
 #endif /* _ANALOGIX_DP_H_ */

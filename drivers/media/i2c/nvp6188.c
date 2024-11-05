@@ -812,10 +812,10 @@ static struct nvp6188_mode supported_modes[] = {
 		.global_reg_list = common_setting_1458M_regs,
 		.mipi_freq_idx = 0,
 		.bpp = 8,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_3,
+		.vc[PAD0] = 0,
+		.vc[PAD1] = 1,
+		.vc[PAD2] = 2,
+		.vc[PAD3] = 3,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_UYVY8_2X8,
@@ -828,10 +828,10 @@ static struct nvp6188_mode supported_modes[] = {
 		.global_reg_list = common_setting_1458M_regs,
 		.mipi_freq_idx = 0,
 		.bpp = 8,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_3,
+		.vc[PAD0] = 0,
+		.vc[PAD1] = 1,
+		.vc[PAD2] = 2,
+		.vc[PAD3] = 3,
 	},
 	{
 		.bus_fmt = MEDIA_BUS_FMT_UYVY8_2X8,
@@ -844,10 +844,10 @@ static struct nvp6188_mode supported_modes[] = {
 		.global_reg_list = common_setting_1458M_regs,
 		.mipi_freq_idx = 0,
 		.bpp = 8,
-		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
-		.vc[PAD1] = V4L2_MBUS_CSI2_CHANNEL_1,
-		.vc[PAD2] = V4L2_MBUS_CSI2_CHANNEL_2,
-		.vc[PAD3] = V4L2_MBUS_CSI2_CHANNEL_3,
+		.vc[PAD0] = 0,
+		.vc[PAD1] = 1,
+		.vc[PAD2] = 2,
+		.vc[PAD3] = 3,
 	},
 };
 
@@ -996,7 +996,7 @@ nvp6188_find_best_fit(struct nvp6188 *nvp6188,
 }
 
 static int nvp6188_set_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
@@ -1016,7 +1016,7 @@ static int nvp6188_set_fmt(struct v4l2_subdev *sd,
 
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&nvp6188->mutex);
 		return -ENOTTY;
@@ -1034,7 +1034,7 @@ static int nvp6188_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int nvp6188_get_fmt(struct v4l2_subdev *sd,
-			   struct v4l2_subdev_pad_config *cfg,
+			   struct v4l2_subdev_state *sd_state,
 			   struct v4l2_subdev_format *fmt)
 {
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
@@ -1045,7 +1045,7 @@ static int nvp6188_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&nvp6188->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&nvp6188->mutex);
 		return -ENOTTY;
@@ -1070,7 +1070,7 @@ static int nvp6188_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int nvp6188_enum_mbus_code(struct v4l2_subdev *sd,
-				  struct v4l2_subdev_pad_config *cfg,
+				  struct v4l2_subdev_state *sd_state,
 				  struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
@@ -1083,7 +1083,7 @@ static int nvp6188_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int nvp6188_enum_frame_interval(struct v4l2_subdev *sd,
-				       struct v4l2_subdev_pad_config *cfg,
+				       struct v4l2_subdev_state *sd_state,
 				       struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1098,7 +1098,7 @@ static int nvp6188_enum_frame_interval(struct v4l2_subdev *sd,
 }
 
 static int nvp6188_enum_frame_sizes(struct v4l2_subdev *sd,
-				    struct v4l2_subdev_pad_config *cfg,
+				    struct v4l2_subdev_state *sd_state,
 				    struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
@@ -1123,8 +1123,7 @@ static int nvp6188_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				 struct v4l2_mbus_config *cfg)
 {
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_4_LANE |
-		     V4L2_MBUS_CSI2_CHANNELS;
+	cfg->bus.mipi_csi2.num_data_lanes = 4;
 
 	return 0;
 }
@@ -2395,7 +2394,7 @@ static int nvp6188_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct nvp6188_mode *def_mode = &supported_modes[0];
 
 	dev_dbg(&nvp6188->client->dev, "%s\n", __func__);
@@ -2840,7 +2839,6 @@ static struct snd_soc_component_driver nvp6188_codec_driver = {
 	.idle_bias_on		= 1,
 	.use_pmdown_time	= 1,
 	.endianness		= 1,
-	.non_legacy_dai_naming	= 1,
 };
 
 static int check_chip_id(struct i2c_client *client){
@@ -3036,7 +3034,7 @@ static int nvp6188_probe(struct i2c_client *client,
 		 nvp6188->module_index, facing,
 		 NVP6188_NAME, dev_name(sd->dev));
 
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -3171,7 +3169,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int nvp6188_remove(struct i2c_client *client)
+static void nvp6188_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct nvp6188 *nvp6188 = to_nvp6188(sd);
@@ -3187,8 +3185,6 @@ static int nvp6188_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__nvp6188_power_off(nvp6188);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 static const struct dev_pm_ops __maybe_unused nvp6188_pm_ops = {

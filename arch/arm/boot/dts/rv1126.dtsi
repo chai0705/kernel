@@ -3,8 +3,8 @@
  * Copyright (c) 2019 Fuzhou Rockchip Electronics Co., Ltd.
  */
 
-#include <dt-bindings/clock/rv1126-cru.h>
-#include <dt-bindings/power/rv1126-power.h>
+#include <dt-bindings/clock/rockchip,rv1126-cru.h>
+#include <dt-bindings/power/rockchip,rv1126-power.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
@@ -384,7 +384,7 @@
 			linux,cma-default;
 		};
 
-		drm_logo: drm-logo@00000000 {
+		drm_logo: drm-logo@0 {
 			compatible = "rockchip,drm-logo";
 			reg = <0x0 0x0>;
 		};
@@ -534,6 +534,16 @@
 			sustainable-power = <977>; /* milliwatts */
 
 			thermal-sensors = <&npu_tsadc 0>;
+
+			trips {
+				npu_crit: npu-crit {
+					/* millicelsius */
+					temperature = <115000>;
+					/* millicelsius */
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
 		};
 	};
 

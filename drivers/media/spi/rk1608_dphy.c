@@ -225,7 +225,7 @@ static int rk1608_s_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int rk1608_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	struct rk1608_dphy *pdata = to_state(sd);
@@ -239,7 +239,7 @@ static int rk1608_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int rk1608_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	struct rk1608_dphy *pdata = to_state(sd);
@@ -259,7 +259,7 @@ static int rk1608_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int rk1608_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_mbus_framefmt *mf = &fmt->format;
@@ -316,7 +316,7 @@ static int rk1608_get_reso_dist(struct rk1608_fmt_inf *fmt_inf,
 }
 
 static int rk1608_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct v4l2_ctrl *remote_ctrl;
@@ -339,7 +339,7 @@ static int rk1608_set_fmt(struct v4l2_subdev *sd,
 	pdata->fmt_inf_idx = idx;
 
 	pdata->rk1608_sd->grp_id = pdata->sd.grp_id;
-	v4l2_subdev_call(pdata->rk1608_sd, pad, set_fmt, cfg, fmt);
+	v4l2_subdev_call(pdata->rk1608_sd, pad, set_fmt, sd_state, fmt);
 
 	remote_ctrl = v4l2_ctrl_find(pdata->rk1608_sd->ctrl_handler,
 						 V4L2_CID_HBLANK);
@@ -587,7 +587,7 @@ static int rk1608_set_ctrl(struct v4l2_ctrl *ctrl)
 
 #define CROP_START(SRC, DST) (((SRC) - (DST)) / 2 / 4 * 4)
 static int rk1608_get_selection(struct v4l2_subdev *sd,
-		struct v4l2_subdev_pad_config *cfg,
+		struct v4l2_subdev_state *sd_state,
 		struct v4l2_subdev_selection *sel)
 {
 	struct rk1608_dphy *pdata = to_state(sd);
@@ -627,7 +627,7 @@ err:
 }
 
 static int rk1608_enum_frame_interval(struct v4l2_subdev *sd,
-	struct v4l2_subdev_pad_config *cfg,
+	struct v4l2_subdev_state *sd_state,
 	struct v4l2_subdev_frame_interval_enum *fie)
 {
 	struct rk1608_dphy *pdata = to_state(sd);
@@ -1100,7 +1100,7 @@ static int rk1608_dphy_probe(struct platform_device *pdev)
 	ret = media_entity_pads_init(&sd->entity, 1, &dphy->pad);
 	if (ret < 0)
 		goto handler_err;
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret < 0)
 		goto register_err;
 

@@ -639,9 +639,8 @@ static int tps65185_probe(struct i2c_client *client, const struct i2c_device_id 
 	return 0;
 }
 
-static int tps65185_remove(struct i2c_client *client)
+static void tps65185_remove(struct i2c_client *client)
 {
-	return 0;
 }
 
 static const struct i2c_device_id tps65185_id[] = {

@@ -682,15 +682,13 @@ err_cleanup:
 	return ret;
 }
 
-static int aw8601_remove(struct i2c_client *client)
+static void aw8601_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct aw8601_device *aw8601_dev = sd_to_aw8601_vcm(sd);
 
 	pm_runtime_disable(&client->dev);
 	aw8601_subdev_cleanup(aw8601_dev);
-
-	return 0;
 }
 
 static int aw8601_init(struct i2c_client *client)

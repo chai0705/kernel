@@ -13,7 +13,8 @@ config VIDEO_ROCKCHIP_HDMIRX_CLASS
 
 config VIDEO_ROCKCHIP_HDMIRX
 	tristate "Rockchip HDMI Receiver driver"
-	depends on VIDEO_V4L2
+	depends on V4L_PLATFORM_DRIVERS
+	depends on VIDEO_DEV
 	depends on ROCKCHIP_SIP
 	select MEDIA_CONTROLLER
 	select VIDEO_V4L2_SUBDEV_API

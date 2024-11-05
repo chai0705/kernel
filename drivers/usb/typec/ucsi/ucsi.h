@@ -10,7 +10,6 @@
 #include <linux/usb/typec.h>
 #include <linux/usb/pd.h>
 #include <linux/usb/role.h>
-#include <linux/usb/pd.h>
 
 /* -------------------------------------------------------------------------- */
 
@@ -288,7 +287,9 @@ struct ucsi {
 	struct ucsi_capability cap;
 	struct ucsi_connector *connector;
 
-	struct work_struct work;
+	struct work_struct resume_work;
+	struct delayed_work work;
+	int work_count;
 #define UCSI_ROLE_SWITCH_RETRY_PER_HZ	10
 #define UCSI_ROLE_SWITCH_INTERVAL	(HZ / UCSI_ROLE_SWITCH_RETRY_PER_HZ)
 #define UCSI_ROLE_SWITCH_WAIT_COUNT	(10 * UCSI_ROLE_SWITCH_RETRY_PER_HZ)
@@ -304,26 +305,6 @@ struct ucsi {
 #define EVENT_PENDING	0
 #define COMMAND_PENDING	1
 #define ACK_PENDING	2
-#define EVENT_PROCESSING	3
-};
-
-/**
- * struct ucsi_android - contains parameters without modifying the format
- * of ucsi struct.
- * @ucsi: contains the ucsi reference.
- * @work: work structure for queuing ucsi_init_work.
- * @work_count: to track the wait count(MAX= UCSI_ROLE_SWITCH_WAIT_COUNT).
- *
- * Required to address Bug: 260537721
- * If the role switch module probes late the
- * fwnode_usb_role_switch_get() will fail with -EPROBE_DEFER.
- * To recover from this, restart the ucsi_init_work
- * to find the fwnode again using a delayed workqueue.
- */
-struct ucsi_android {
-	struct ucsi ucsi;
-	struct delayed_work work;
-	int work_count;
 };
 
 #define UCSI_MAX_SVID		5
@@ -340,6 +321,8 @@ struct ucsi_connector {
 	struct mutex lock; /* port lock */
 	struct work_struct work;
 	struct completion complete;
+	struct workqueue_struct *wq;
+	struct list_head partner_tasks;
 
 	struct typec_port *port;
 	struct typec_partner *partner;
@@ -349,7 +332,6 @@ struct ucsi_connector {
 
 	struct typec_capability typec_cap;
 
-	u16 unprocessed_changes;
 	struct ucsi_connector_status status;
 	struct ucsi_connector_capability cap;
 	struct power_supply *psy;

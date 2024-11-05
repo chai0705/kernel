@@ -3,6 +3,10 @@
 #define _INET_COMMON_H
 
 #include <linux/indirect_call_wrapper.h>
+#include <linux/net.h>
+#include <linux/netdev_features.h>
+#include <linux/types.h>
+#include <net/sock.h>
 
 extern const struct proto_ops inet_stream_ops;
 extern const struct proto_ops inet_dgram_ops;
@@ -12,6 +16,8 @@ extern const struct proto_ops inet_dgram_ops;
  */
 
 struct msghdr;
+struct net;
+struct page;
 struct sock;
 struct sockaddr;
 struct socket;
@@ -27,6 +33,7 @@ int inet_accept(struct socket *sock, struct socket *newsock, int flags,
 		bool kern);
 int inet_send_prepare(struct sock *sk);
 int inet_sendmsg(struct socket *sock, struct msghdr *msg, size_t size);
+void inet_splice_eof(struct socket *sock);
 ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset,
 		      size_t size, int flags);
 int inet_recvmsg(struct socket *sock, struct msghdr *msg, size_t size,
@@ -41,6 +48,8 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len);
 #define BIND_WITH_LOCK			(1 << 1)
 /* Called from BPF program. */
 #define BIND_FROM_BPF			(1 << 2)
+/* Skip CAP_NET_BIND_SERVICE check. */
+#define BIND_NO_CAP_NET_BIND_SERVICE	(1 << 3)
 int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 		u32 flags);
 int inet_getname(struct socket *sock, struct sockaddr *uaddr,

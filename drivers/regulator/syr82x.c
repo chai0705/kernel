@@ -470,14 +470,13 @@ err:
 
 }
 
-static int  syr82x_i2c_remove(struct i2c_client *i2c)
+static void syr82x_i2c_remove(struct i2c_client *i2c)
 {
 	struct syr82x *syr82x = i2c_get_clientdata(i2c);
 
 	if (syr82x->rdev[0])
 		regulator_unregister(syr82x->rdev[0]);
 	i2c_set_clientdata(i2c, NULL);
-	return 0;
 }
 
 static const struct i2c_device_id syr82x_i2c_id[] = {

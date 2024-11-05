@@ -907,7 +907,7 @@ ar0230_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int ar0230_set_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ar0230 *ar0230 = to_ar0230(sd);
@@ -923,7 +923,7 @@ static int ar0230_set_fmt(struct v4l2_subdev *sd,
 	fmt->format.field = V4L2_FIELD_NONE;
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		*v4l2_subdev_get_try_format(sd, cfg, fmt->pad) = fmt->format;
+		*v4l2_subdev_get_try_format(sd, sd_state, fmt->pad) = fmt->format;
 #else
 		mutex_unlock(&ar0230->mutex);
 		return -ENOTTY;
@@ -945,7 +945,7 @@ static int ar0230_set_fmt(struct v4l2_subdev *sd,
 }
 
 static int ar0230_get_fmt(struct v4l2_subdev *sd,
-			  struct v4l2_subdev_pad_config *cfg,
+			  struct v4l2_subdev_state *sd_state,
 			  struct v4l2_subdev_format *fmt)
 {
 	struct ar0230 *ar0230 = to_ar0230(sd);
@@ -954,7 +954,7 @@ static int ar0230_get_fmt(struct v4l2_subdev *sd,
 	mutex_lock(&ar0230->mutex);
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY) {
 #ifdef CONFIG_VIDEO_V4L2_SUBDEV_API
-		fmt->format = *v4l2_subdev_get_try_format(sd, cfg, fmt->pad);
+		fmt->format = *v4l2_subdev_get_try_format(sd, sd_state, fmt->pad);
 #else
 		mutex_unlock(&ar0230->mutex);
 		return -ENOTTY;
@@ -971,7 +971,7 @@ static int ar0230_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int ar0230_enum_mbus_code(struct v4l2_subdev *sd,
-				 struct v4l2_subdev_pad_config *cfg,
+				 struct v4l2_subdev_state *sd_state,
 				 struct v4l2_subdev_mbus_code_enum *code)
 {
 	if (code->index != 0)
@@ -982,7 +982,7 @@ static int ar0230_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int ar0230_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -1274,7 +1274,7 @@ static int ar0230_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ar0230 *ar0230 = to_ar0230(sd);
 	struct v4l2_mbus_framefmt *try_fmt =
-				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+				v4l2_subdev_get_try_format(sd, fh->state, 0);
 	const struct ar0230_mode *def_mode = &supported_modes[0];
 
 	mutex_lock(&ar0230->mutex);
@@ -1294,14 +1294,14 @@ static int ar0230_g_mbus_config(struct v4l2_subdev *sd, unsigned int pad_id,
 				struct v4l2_mbus_config *config)
 {
 	config->type = V4L2_MBUS_PARALLEL;
-	config->flags = V4L2_MBUS_HSYNC_ACTIVE_HIGH |
+	config->bus.parallel.flags = V4L2_MBUS_HSYNC_ACTIVE_HIGH |
 			V4L2_MBUS_VSYNC_ACTIVE_HIGH |
 			V4L2_MBUS_PCLK_SAMPLE_FALLING;
 	return 0;
 }
 
 static int ar0230_enum_frame_interval(struct v4l2_subdev *sd,
-				      struct v4l2_subdev_pad_config *cfg,
+				      struct v4l2_subdev_state *sd_state,
 				      struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -1633,7 +1633,7 @@ static int ar0230_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 ar0230->module_index, facing,
 		 AR0230_NAME, dev_name(sd->dev));
-	ret = v4l2_async_register_subdev_sensor_common(sd);
+	ret = v4l2_async_register_subdev_sensor(sd);
 	if (ret) {
 		dev_err(dev, "v4l2 async register subdev failed\n");
 		goto err_clean_entity;
@@ -1659,7 +1659,7 @@ err_destroy_mutex:
 	return ret;
 }
 
-static int ar0230_remove(struct i2c_client *client)
+static void ar0230_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ar0230 *ar0230 = to_ar0230(sd);
@@ -1675,8 +1675,6 @@ static int ar0230_remove(struct i2c_client *client)
 	if (!pm_runtime_status_suspended(&client->dev))
 		__ar0230_power_off(ar0230);
 	pm_runtime_set_suspended(&client->dev);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

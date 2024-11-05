@@ -16,9 +16,9 @@
 
 #include <video/of_display_timing.h>
 
+#include <drm/display/drm_dp_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_dp_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
@@ -60,6 +60,11 @@
 #define RK3568_GRF_VO_CON1		0X0364
 #define RK3568_RGB_DATA_BYPASS(v)	HIWORD_UPDATE(v, 6, 6)
 
+#define RK3576_IOC_GRF_MISC_CON8	0x6420
+#define RK3576_VOP_MCU_SEL(v)		HIWORD_UPDATE(v, 10, 10)
+#define RK3576_VOP_DLL_SEL(v)		HIWORD_UPDATE(v, 8, 8)
+#define RK3576_VOP_DCLK_DELAYLINE(v)	HIWORD_UPDATE(v, 0, 6)
+
 struct rockchip_rgb;
 
 struct rockchip_rgb_funcs {
@@ -70,6 +75,7 @@ struct rockchip_rgb_funcs {
 struct rockchip_rgb_data {
 	u32 rgb_max_dclk_rate;
 	u32 mcu_max_dclk_rate;
+	u32 dclk_delayline;
 	const struct rockchip_rgb_funcs *funcs;
 };
 
@@ -131,6 +137,7 @@ struct rockchip_rgb {
 	u8 id;
 	u32 max_dclk_rate;
 	u32 mcu_pix_total;
+	u32 dclk_delayline;
 	struct device *dev;
 	struct device_node *np_mcu_panel;
 	struct drm_panel *panel;
@@ -239,6 +246,8 @@ static void rockchip_rgb_encoder_enable(struct drm_encoder *encoder)
 static void rockchip_rgb_encoder_disable(struct drm_encoder *encoder)
 {
 	struct rockchip_rgb *rgb = encoder_to_rgb(encoder);
+	struct drm_crtc *crtc = encoder->crtc;
+	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc->state);
 
 	if (rgb->panel) {
 		drm_panel_disable(rgb->panel);
@@ -254,6 +263,9 @@ static void rockchip_rgb_encoder_disable(struct drm_encoder *encoder)
 		rgb->funcs->disable(rgb);
 
 	pinctrl_pm_select_sleep_state(rgb->dev);
+
+	if (crtc->state->active_changed)
+		s->output_if &= ~(VOP_OUTPUT_IF_RGB | VOP_OUTPUT_IF_BT656 | VOP_OUTPUT_IF_BT1120);
 }
 
 static int
@@ -270,6 +282,8 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 	else
 		s->bus_format = MEDIA_BUS_FMT_RGB888_1X24;
 
+	s->color_range = DRM_COLOR_YCBCR_FULL_RANGE;
+	s->color_encoding = DRM_COLOR_YCBCR_BT709;
 	switch (s->bus_format) {
 	case MEDIA_BUS_FMT_RGB666_1X18:
 		s->output_mode = ROCKCHIP_OUT_MODE_P666;
@@ -304,6 +318,8 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 	case MEDIA_BUS_FMT_VYUY8_2X8:
 		s->output_mode = ROCKCHIP_OUT_MODE_BT656;
 		s->output_if = VOP_OUTPUT_IF_BT656;
+		s->color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
+		s->color_encoding = DRM_COLOR_YCBCR_BT601;
 		break;
 	case MEDIA_BUS_FMT_YUYV8_1X16:
 	case MEDIA_BUS_FMT_YVYU8_1X16:
@@ -311,6 +327,7 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 	case MEDIA_BUS_FMT_VYUY8_1X16:
 		s->output_mode = ROCKCHIP_OUT_MODE_BT1120;
 		s->output_if = VOP_OUTPUT_IF_BT1120;
+		s->color_range = DRM_COLOR_YCBCR_LIMITED_RANGE;
 		break;
 	case MEDIA_BUS_FMT_RGB888_1X24:
 	case MEDIA_BUS_FMT_RGB666_1X24_CPADHI:
@@ -324,7 +341,6 @@ rockchip_rgb_encoder_atomic_check(struct drm_encoder *encoder,
 	s->bus_flags = info->bus_flags;
 	s->tv_state = &conn_state->tv;
 	s->eotf = HDMI_EOTF_TRADITIONAL_GAMMA_SDR;
-	s->color_space = V4L2_COLORSPACE_DEFAULT;
 
 	return 0;
 }
@@ -368,7 +384,6 @@ rockchip_rgb_encoder_mode_valid(struct drm_encoder *encoder,
 				 const struct drm_display_mode *mode)
 {
 	struct rockchip_rgb *rgb = encoder_to_rgb(encoder);
-	struct device *dev = rgb->dev;
 	struct drm_display_info *info = &rgb->connector.display_info;
 	u32 request_clock = mode->clock;
 	u32 max_clock = rgb->max_dclk_rate;
@@ -387,8 +402,8 @@ rockchip_rgb_encoder_mode_valid(struct drm_encoder *encoder,
 				 (rgb->mcu_pix_total + 1);
 
 	if (max_clock != 0 && request_clock > max_clock) {
-		DRM_DEV_ERROR(dev, "mode [%dx%d] clock %d is higher than max_clock %d\n",
-			      mode->hdisplay, mode->vdisplay, request_clock, max_clock);
+		DRM_DEBUG_DRIVER("mode [%dx%d] clock %d is higher than max_clock %d\n",
+				 mode->hdisplay, mode->vdisplay, request_clock, max_clock);
 		return MODE_CLOCK_HIGH;
 	}
 
@@ -819,7 +834,8 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 	struct rockchip_rgb *rgb = dev_get_drvdata(dev);
 	struct drm_device *drm_dev = data;
 	struct drm_encoder *encoder = &rgb->encoder;
-	struct drm_connector *connector;
+	struct drm_connector *connector = NULL;
+	struct rockchip_drm_private *private = drm_dev->dev_private;
 	int ret;
 
 	if (rgb->np_mcu_panel) {
@@ -871,8 +887,6 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 	drm_encoder_helper_add(encoder, &rockchip_rgb_encoder_helper_funcs);
 
 	if (rgb->panel) {
-		struct rockchip_drm_private *private = drm_dev->dev_private;
-
 		connector = &rgb->connector;
 		connector->interlace_allowed = true;
 		ret = drm_connector_init(drm_dev, connector,
@@ -894,12 +908,9 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 				      "failed to attach encoder: %d\n", ret);
 			goto err_free_connector;
 		}
-		rgb->sub_dev.connector = &rgb->connector;
-		rgb->sub_dev.of_node = rgb->dev->of_node;
-		rgb->sub_dev.loader_protect = rockchip_rgb_encoder_loader_protect;
-		drm_object_attach_property(&connector->base, private->connector_id_prop, 0);
-		rockchip_drm_register_sub_dev(&rgb->sub_dev);
 	} else {
+		struct list_head *connector_list;
+
 		rgb->bridge->encoder = encoder;
 		ret = drm_bridge_attach(encoder, rgb->bridge, NULL, 0);
 		if (ret) {
@@ -907,6 +918,19 @@ static int rockchip_rgb_bind(struct device *dev, struct device *master,
 				      "failed to attach bridge: %d\n", ret);
 			goto err_free_encoder;
 		}
+		connector_list = &rgb->bridge->dev->mode_config.connector_list;
+
+		list_for_each_entry(connector, connector_list, head)
+			if (drm_connector_has_possible_encoder(connector, &rgb->encoder))
+				break;
+	}
+
+	if (connector) {
+		rgb->sub_dev.connector = connector;
+		rgb->sub_dev.of_node = rgb->dev->of_node;
+		rgb->sub_dev.loader_protect = rockchip_rgb_encoder_loader_protect;
+		drm_object_attach_property(&connector->base, private->connector_id_prop, rgb->id);
+		rockchip_drm_register_sub_dev(&rgb->sub_dev);
 	}
 
 	return 0;
@@ -965,6 +989,7 @@ static int rockchip_rgb_probe(struct platform_device *pdev)
 			rgb->max_dclk_rate = rgb_data->mcu_max_dclk_rate;
 		else
 			rgb->max_dclk_rate = rgb_data->rgb_max_dclk_rate;
+		rgb->dclk_delayline = rgb_data->dclk_delayline;
 	}
 	rgb->id = id;
 	rgb->dev = dev;
@@ -1083,6 +1108,25 @@ static const struct rockchip_rgb_data rk3568_rgb = {
 	.funcs = &rk3568_rgb_funcs,
 };
 
+static void rk3576_rgb_enable(struct rockchip_rgb *rgb)
+{
+	regmap_write(rgb->grf, RK3576_IOC_GRF_MISC_CON8,
+		     RK3576_VOP_MCU_SEL(rgb->data_sync_bypass));
+	regmap_write(rgb->grf, RK3576_IOC_GRF_MISC_CON8,
+		     RK3576_VOP_DLL_SEL(true));
+	regmap_write(rgb->grf, RK3576_IOC_GRF_MISC_CON8,
+		     RK3576_VOP_DCLK_DELAYLINE(rgb->dclk_delayline));
+}
+
+static const struct rockchip_rgb_funcs rk3576_rgb_funcs = {
+	.enable = rk3576_rgb_enable,
+};
+
+static const struct rockchip_rgb_data rk3576_rgb = {
+	.dclk_delayline = 5,
+	.funcs = &rk3576_rgb_funcs,
+};
+
 static void rv1126_rgb_enable(struct rockchip_rgb *rgb)
 {
 	regmap_write(rgb->grf, RV1126_GRF_IOFUNC_CON3,
@@ -1125,6 +1169,7 @@ static const struct of_device_id rockchip_rgb_dt_ids[] = {
 	{ .compatible = "rockchip,rk3368-rgb", },
 	{ .compatible = "rockchip,rk3562-rgb", .data = &rk3562_rgb },
 	{ .compatible = "rockchip,rk3568-rgb", .data = &rk3568_rgb },
+	{ .compatible = "rockchip,rk3576-rgb", .data = &rk3576_rgb },
 	{ .compatible = "rockchip,rk3588-rgb", },
 	{ .compatible = "rockchip,rv1106-rgb", .data = &rv1106_rgb},
 	{ .compatible = "rockchip,rv1108-rgb", },

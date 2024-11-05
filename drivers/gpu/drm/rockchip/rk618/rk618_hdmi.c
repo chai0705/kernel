@@ -979,7 +979,8 @@ static int rk618_hdmi_connector_get_modes(struct drm_connector *connector)
 		hdmi->hdmi_data.sink_is_hdmi = true;
 		hdmi->hdmi_data.sink_has_audio = true;
 		ret = rockchip_drm_add_modes_noedid(connector);
-		info->edid_hdmi_dc_modes = 0;
+		info->edid_hdmi_rgb444_dc_modes = 0;
+		info->edid_hdmi_ycbcr444_dc_modes = 0;
 		info->hdmi.y420_dc_modes = 0;
 		info->color_formats = 0;
 
@@ -1038,7 +1039,7 @@ static void rk618_hdmi_bridge_mode_set(struct drm_bridge *bridge,
 	struct rk618_hdmi *hdmi = bridge_to_hdmi(bridge);
 
 	/* Store the display mode for plugin/DPMS poweron events */
-	memcpy(&hdmi->previous_mode, adj_mode, sizeof(hdmi->previous_mode));
+	drm_mode_copy(&hdmi->previous_mode, adj_mode);
 }
 
 static void rk618_hdmi_bridge_enable(struct drm_bridge *bridge)

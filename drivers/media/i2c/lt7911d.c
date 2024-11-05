@@ -62,7 +62,7 @@ static const s64 link_freq_menu_items[] = {
 };
 
 struct lt7911d_state {
-	struct v4l2_fwnode_bus_mipi_csi2 bus;
+	struct v4l2_mbus_config_mipi_csi2 bus;
 	struct v4l2_subdev sd;
 	struct media_pad pad;
 	struct v4l2_ctrl_handler hdl;
@@ -654,12 +654,6 @@ static int lt7911d_s_dv_timings(struct v4l2_subdev *sd,
 		return 0;
 	}
 
-	if (!v4l2_valid_dv_timings(timings,
-				&lt7911d_timings_cap, NULL, NULL)) {
-		v4l2_dbg(1, debug, sd, "%s: timings out of range\n", __func__);
-		return -ERANGE;
-	}
-
 	lt7911d->timings = *timings;
 
 	enable_stream(sd, false);
@@ -725,26 +719,7 @@ static int lt7911d_g_mbus_config(struct v4l2_subdev *sd,
 	struct lt7911d_state *lt7911d = to_state(sd);
 
 	cfg->type = V4L2_MBUS_CSI2_DPHY;
-	cfg->flags = V4L2_MBUS_CSI2_NONCONTINUOUS_CLOCK |
-			V4L2_MBUS_CSI2_CHANNEL_0;
-
-	switch (lt7911d->csi_lanes_in_use) {
-	case 1:
-		cfg->flags |= V4L2_MBUS_CSI2_1_LANE;
-		break;
-	case 2:
-		cfg->flags |= V4L2_MBUS_CSI2_2_LANE;
-		break;
-	case 3:
-		cfg->flags |= V4L2_MBUS_CSI2_3_LANE;
-		break;
-	case 4:
-		cfg->flags |= V4L2_MBUS_CSI2_4_LANE;
-		break;
-
-	default:
-		return -EINVAL;
-	}
+	cfg->bus.mipi_csi2 = lt7911d->bus;
 
 	return 0;
 }
@@ -757,7 +732,7 @@ static int lt7911d_s_stream(struct v4l2_subdev *sd, int enable)
 }
 
 static int lt7911d_enum_mbus_code(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_mbus_code_enum *code)
 {
 	switch (code->index) {
@@ -773,7 +748,7 @@ static int lt7911d_enum_mbus_code(struct v4l2_subdev *sd,
 }
 
 static int lt7911d_enum_frame_sizes(struct v4l2_subdev *sd,
-				   struct v4l2_subdev_pad_config *cfg,
+				   struct v4l2_subdev_state *sd_state,
 				   struct v4l2_subdev_frame_size_enum *fse)
 {
 	if (fse->index >= ARRAY_SIZE(supported_modes))
@@ -791,7 +766,7 @@ static int lt7911d_enum_frame_sizes(struct v4l2_subdev *sd,
 }
 
 static int lt7911d_get_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct lt7911d_state *lt7911d = to_state(sd);
@@ -814,7 +789,7 @@ static int lt7911d_get_fmt(struct v4l2_subdev *sd,
 }
 
 static int lt7911d_enum_frame_interval(struct v4l2_subdev *sd,
-				struct v4l2_subdev_pad_config *cfg,
+				struct v4l2_subdev_state *sd_state,
 				struct v4l2_subdev_frame_interval_enum *fie)
 {
 	if (fie->index >= ARRAY_SIZE(supported_modes))
@@ -857,7 +832,7 @@ lt7911d_find_best_fit(struct v4l2_subdev_format *fmt)
 }
 
 static int lt7911d_set_fmt(struct v4l2_subdev *sd,
-			struct v4l2_subdev_pad_config *cfg,
+			struct v4l2_subdev_state *sd_state,
 			struct v4l2_subdev_format *format)
 {
 	struct lt7911d_state *lt7911d = to_state(sd);
@@ -865,7 +840,7 @@ static int lt7911d_set_fmt(struct v4l2_subdev *sd,
 
 	/* is overwritten by get_fmt */
 	u32 code = format->format.code;
-	int ret = lt7911d_get_fmt(sd, cfg, format);
+	int ret = lt7911d_get_fmt(sd, sd_state, format);
 
 	format->format.code = code;
 
@@ -1273,7 +1248,7 @@ static int lt7911d_probe(struct i2c_client *client,
 	snprintf(sd->name, sizeof(sd->name), "m%02d_%s_%s %s",
 		 lt7911d->module_index, facing,
 		 LT7911D_NAME, dev_name(sd->dev));
-	err = v4l2_async_register_subdev_sensor_common(sd);
+	err = v4l2_async_register_subdev_sensor(sd);
 	if (err < 0) {
 		v4l2_err(sd, "v4l2 register subdev failed! err:%d\n", err);
 		goto err_clean_entity;
@@ -1341,7 +1316,7 @@ err_free_hdl:
 	return err;
 }
 
-static int lt7911d_remove(struct i2c_client *client)
+static void lt7911d_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct lt7911d_state *lt7911d = to_state(sd);
@@ -1360,8 +1335,6 @@ static int lt7911d_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(&lt7911d->hdl);
 	mutex_destroy(&lt7911d->confctl_mutex);
 	clk_disable_unprepare(lt7911d->xvclk);
-
-	return 0;
 }
 
 #if IS_ENABLED(CONFIG_OF)

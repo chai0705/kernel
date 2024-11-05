@@ -78,6 +78,23 @@
  */
 #define MB_DEFAULT_MAX_INODE_PREALLOC	512
 
+/*
+ * Number of groups to search linearly before performing group scanning
+ * optimization.
+ */
+#define MB_DEFAULT_LINEAR_LIMIT		4
+
+/*
+ * Minimum number of groups that should be present in the file system to perform
+ * group scanning optimizations.
+ */
+#define MB_DEFAULT_LINEAR_SCAN_THRESHOLD	16
+
+/*
+ * Number of valid buddy orders
+ */
+#define MB_NUM_ORDERS(sb)		((sb)->s_blocksize_bits + 2)
+
 struct ext4_free_data {
 	/* this links the free block information from sb_info */
 	struct list_head		efd_list;
@@ -161,11 +178,13 @@ struct ext4_allocation_context {
 	/* copy of the best found extent taken before preallocation efforts */
 	struct ext4_free_extent ac_f_ex;
 
+	__u32 ac_groups_considered;
+	__u32 ac_flags;		/* allocation hints */
 	__u16 ac_groups_scanned;
+	__u16 ac_groups_linear_remaining;
 	__u16 ac_found;
 	__u16 ac_tail;
 	__u16 ac_buddy;
-	__u16 ac_flags;		/* allocation hints */
 	__u8 ac_status;
 	__u8 ac_criteria;
 	__u8 ac_2order;		/* if request is to allocate 2^N blocks and
@@ -197,6 +216,20 @@ static inline ext4_fsblk_t ext4_grp_offs_to_block(struct super_block *sb,
 {
 	return ext4_group_first_block_no(sb, fex->fe_group) +
 		(fex->fe_start << EXT4_SB(sb)->s_cluster_bits);
+}
+
+static inline loff_t extent_logical_end(struct ext4_sb_info *sbi,
+					struct ext4_free_extent *fex)
+{
+	/* Use loff_t to avoid end exceeding ext4_lblk_t max. */
+	return (loff_t)fex->fe_logical + EXT4_C2B(sbi, fex->fe_len);
+}
+
+static inline loff_t pa_logical_end(struct ext4_sb_info *sbi,
+				    struct ext4_prealloc_space *pa)
+{
+	/* Use loff_t to avoid end exceeding ext4_lblk_t max. */
+	return (loff_t)pa->pa_lstart + EXT4_C2B(sbi, pa->pa_len);
 }
 
 typedef int (*ext4_mballoc_query_range_fn)(

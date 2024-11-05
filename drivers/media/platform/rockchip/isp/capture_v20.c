@@ -1200,7 +1200,7 @@ static struct streams_ops rkisp2_dmatx0_streams_ops = {
 	.config_mi = dmatx0_config_mi,
 	.enable_mi = dmatx_enable_mi,
 	.stop_mi = dmatx_stop_mi,
-	.is_stream_stopped = dmatx0_is_stream_stopped,
+	.is_stream_stopped = dmatx_is_stream_stopped,
 	.update_mi = update_dmatx_v2,
 	.frame_end = mi_frame_end,
 };
@@ -1209,7 +1209,7 @@ static struct streams_ops rkisp2_dmatx1_streams_ops = {
 	.config_mi = dmatx1_config_mi,
 	.enable_mi = dmatx_enable_mi,
 	.stop_mi = dmatx_stop_mi,
-	.is_stream_stopped = dmatx1_is_stream_stopped,
+	.is_stream_stopped = dmatx_is_stream_stopped,
 	.update_mi = update_dmatx_v2,
 	.frame_end = mi_frame_end,
 };
@@ -1218,7 +1218,7 @@ static struct streams_ops rkisp2_dmatx2_streams_ops = {
 	.config_mi = dmatx2_config_mi,
 	.enable_mi = dmatx_enable_mi,
 	.stop_mi = dmatx_stop_mi,
-	.is_stream_stopped = dmatx2_is_stream_stopped,
+	.is_stream_stopped = dmatx_is_stream_stopped,
 	.update_mi = update_dmatx_v2,
 	.frame_end = mi_frame_end,
 };
@@ -1227,7 +1227,7 @@ static struct streams_ops rkisp2_dmatx3_streams_ops = {
 	.config_mi = dmatx3_config_mi,
 	.enable_mi = dmatx_enable_mi,
 	.stop_mi = dmatx_stop_mi,
-	.is_stream_stopped = dmatx3_is_stream_stopped,
+	.is_stream_stopped = dmatx_is_stream_stopped,
 	.update_mi = update_dmatx_v2,
 	.frame_end = mi_frame_end,
 };
@@ -1638,7 +1638,12 @@ static void rkisp_buf_queue(struct vb2_buffer *vb)
 
 	memset(ispbuf->buff_addr, 0, sizeof(ispbuf->buff_addr));
 	for (i = 0; i < isp_fmt->mplanes; i++) {
-		vb2_plane_vaddr(vb, i);
+		ispbuf->vaddr[i] = vb2_plane_vaddr(vb, i);
+		if (rkisp_buf_dbg && ispbuf->vaddr[i]) {
+			u64 *data = ispbuf->vaddr[i];
+
+			*data = RKISP_DATA_CHECK;
+		}
 		if (stream->ispdev->hw_dev->is_dma_sg_ops) {
 			sgt = vb2_dma_sg_plane_desc(vb, i);
 			ispbuf->buff_addr[i] = sg_dma_address(sgt->sgl);
@@ -1770,7 +1775,7 @@ static void rkisp_stop_streaming(struct vb2_queue *queue)
 	if (stream->id == RKISP_STREAM_MP ||
 	    (stream->id == RKISP_STREAM_SP && stream->out_isp_fmt.fmt_type != FMT_FBCGAIN)) {
 		/* call to the other devices */
-		media_pipeline_stop(&node->vdev.entity);
+		video_device_pipeline_stop(&node->vdev);
 		ret = dev->pipe.set_stream(&dev->pipe, false);
 		if (ret < 0)
 			v4l2_err(v4l2_dev,
@@ -1913,7 +1918,7 @@ rkisp_start_streaming(struct vb2_queue *queue, unsigned int count)
 		if (ret < 0)
 			goto stop_stream;
 
-		ret = media_pipeline_start(&node->vdev.entity, &dev->pipe.pipe);
+		ret = video_device_pipeline_start(&node->vdev, &dev->pipe.pipe);
 		if (ret < 0) {
 			v4l2_err(&dev->v4l2_dev,
 				 "start pipeline failed %d\n", ret);

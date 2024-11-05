@@ -3,8 +3,6 @@
 #define _LINUX_SCHED_TOPOLOGY_H
 
 #include <linux/topology.h>
-#include <linux/android_kabi.h>
-#include <linux/android_vendor.h>
 
 #include <linux/sched/idle.h>
 
@@ -44,6 +42,13 @@ static inline int cpu_smt_flags(void)
 }
 #endif
 
+#ifdef CONFIG_SCHED_CLUSTER
+static inline int cpu_cluster_flags(void)
+{
+	return SD_SHARE_PKG_RESOURCES;
+}
+#endif
+
 #ifdef CONFIG_SCHED_MC
 static inline int cpu_core_flags(void)
 {
@@ -76,8 +81,7 @@ struct sched_domain_shared {
 	atomic_t	ref;
 	atomic_t	nr_busy_cpus;
 	int		has_idle_cores;
-
-	ANDROID_VENDOR_DATA(1);
+	int		nr_idle_scan;
 };
 
 struct sched_domain {
@@ -90,6 +94,7 @@ struct sched_domain {
 	unsigned int busy_factor;	/* less balancing by factor if busy */
 	unsigned int imbalance_pct;	/* No balance until over watermark */
 	unsigned int cache_nice_tries;	/* Leave cache hot tasks for # tries */
+	unsigned int imb_numa_nr;	/* Nr running tasks that allows a NUMA imbalance */
 
 	int nohz_idle;			/* NOHZ IDLE status */
 	int flags;			/* See SD_* */
@@ -102,7 +107,7 @@ struct sched_domain {
 
 	/* idle_balance() stats */
 	u64 max_newidle_lb_cost;
-	unsigned long next_decay_max_lb_cost;
+	unsigned long last_decay_max_lb_cost;
 
 	u64 avg_scan_cost;		/* select_idle_sibling */
 
@@ -147,10 +152,6 @@ struct sched_domain {
 	struct sched_domain_shared *shared;
 
 	unsigned int span_weight;
-
-	ANDROID_KABI_RESERVE(1);
-	ANDROID_KABI_RESERVE(2);
-
 	/*
 	 * Span of all CPUs in this domain.
 	 *
@@ -233,6 +234,14 @@ static inline bool cpus_share_cache(int this_cpu, int that_cpu)
 
 #endif	/* !CONFIG_SMP */
 
+#if defined(CONFIG_ENERGY_MODEL) && defined(CONFIG_CPU_FREQ_GOV_SCHEDUTIL)
+extern void rebuild_sched_domains_energy(void);
+#else
+static inline void rebuild_sched_domains_energy(void)
+{
+}
+#endif
+
 #ifndef arch_scale_cpu_capacity
 /**
  * arch_scale_cpu_capacity - get the capacity scale factor of a given CPU.
@@ -259,10 +268,10 @@ unsigned long arch_scale_thermal_pressure(int cpu)
 }
 #endif
 
-#ifndef arch_set_thermal_pressure
+#ifndef arch_update_thermal_pressure
 static __always_inline
-void arch_set_thermal_pressure(const struct cpumask *cpus,
-			       unsigned long th_pressure)
+void arch_update_thermal_pressure(const struct cpumask *cpus,
+				  unsigned long capped_frequency)
 { }
 #endif
 

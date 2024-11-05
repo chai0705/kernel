@@ -1,7 +1,7 @@
 /*
  * Fundamental constants relating to Neighbor Discovery Protocol
  *
- * Copyright (C) 2020, Broadcom.
+ * Copyright (C) 2022, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -54,9 +54,17 @@
 
 /* For icmpv6 */
 #define ICMPV6_HEADER_TYPE	0x3A
-#define ICMPV6_PKT_TYPE_RA	134
-#define ICMPV6_PKT_TYPE_NS	135
-#define ICMPV6_PKT_TYPE_NA	136
+#define ICMPV6_PKT_TYPE_ECHO_REQ		128
+#define ICMPV6_PKT_TYPE_ECHO_REPLY		129
+#define ICMPV6_PKT_TYPE_MULTI_LST_QUERY		130
+#define ICMPV6_PKT_TYPE_MULTI_LST_REPORT	131
+#define ICMPV6_PKT_TYPE_MULTI_LST_DONE		132
+#define ICMPV6_PKT_TYPE_RS			133
+#define ICMPV6_PKT_TYPE_RA			134
+#define ICMPV6_PKT_TYPE_NS			135
+#define ICMPV6_PKT_TYPE_NA			136
+
+#define ICMPV6_RA_FLAG_OFFSET	5
 
 #define ICMPV6_ND_OPT_TYPE_TARGET_MAC	2
 #define ICMPV6_ND_OPT_TYPE_SRC_MAC		1
