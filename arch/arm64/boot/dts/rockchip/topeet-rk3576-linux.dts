@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)                                                                
+/*
+ * Copyright (c) 2024 Rockchip Electronics Co., Ltd.
+ *
+ */
+
+/dts-v1/;
+
+#include "rk3576.dtsi"
+#include "rk3576-linux.dtsi"
+#include "topeet-rk3576-linux.dtsi"
+#include <dt-bindings/usb/pd.h>
+#include "rk3576-rk806.dtsi"
+#include "topeet-screen-lcds.dts"
+
+/ {
+    model = "TOPEET RK3576 EVB Board";
+    compatible = "rockchip,rk3576";
+
+    // ADC 按键
+	adc_keys: adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 1>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		vol-up-key {
+			label = "volume up";
+			linux,code = <KEY_VOLUMEUP>;
+			press-threshold-microvolt = <17000>;
+		};
+
+		vol-down-key {
+			label = "volume down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			press-threshold-microvolt = <417000>;
+		};
+
+		menu-key {
+			label = "menu";
+			linux,code = <KEY_MENU>;
+			press-threshold-microvolt = <890000>;
+		};
+
+		back-key {
+			label = "back";
+			linux,code = <KEY_BACK>;
+			press-threshold-microvolt = <1235000>;
+		};
+	};
+
+    //板载声卡
+    es8388_sound: es8388-sound {
+        status = "okay";
+        compatible = "rockchip,multicodecs-card";
+        rockchip,card-name = "rockchip-es8388";
+        hp-det-gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_LOW>;
+        io-channels = <&saradc 3>;
+        io-channel-names = "adc-detect";
+        keyup-threshold-microvolt = <1800000>;
+        poll-interval = <100>;
+        spk-con-gpio = <&gpio2 RK_PB1 GPIO_ACTIVE_HIGH>;
+        hp-con-gpio = <&gpio3 RK_PD6 GPIO_ACTIVE_HIGH>;
+        rockchip,pre-power-on-delay-ms = <30>;
+        rockchip,post-power-down-delay-ms = <40>;
+        rockchip,format = "i2s";
+        rockchip,mclk-fs = <256>;
+        rockchip,cpu = <&sai1>;
+        rockchip,codec = <&es8388>;
+        rockchip,audio-routing =
+            "Headphone", "LOUT1",
+            "Headphone", "ROUT1",
+            "Speaker", "LOUT2",
+            "Speaker", "ROUT2",
+            "Headphone", "Headphone Power",
+            "Headphone", "Headphone Power",
+            "Speaker", "Speaker Power",
+            "Speaker", "Speaker Power",
+            "LINPUT1", "Main Mic",
+            "LINPUT2", "Main Mic",
+            "RINPUT1", "Headset Mic",
+            "RINPUT2", "Headset Mic";
+        pinctrl-names = "default";
+        pinctrl-0 = <&hp_det>;
+        play-pause-key {
+            label = "playpause";
+            linux,code = <KEY_PLAYPAUSE>;
+            press-threshold-microvolt = <2000>;
+        };
+    };
+
+    //用户LED灯
+    leds: leds {
+		compatible = "pwm-leds";
+		work_led: work {
+            pwms = <&pwm1_6ch_0 0 500000 0>;
+			linux,default-trigger = "heartbeat";
+			default-state = "on";
+		};
+	};
+}; 
+
+&pwm1_6ch_0 {
+    status = "okay";
+};
+
+//网卡0
+&gmac0 {
+    /* Use rgmii-rxid mode to disable rx delay inside Soc */
+    phy-mode = "rgmii-rxid";
+    clock_in_out = "output";
+
+    snps,reset-gpio = <&gpio2 RK_PB5 GPIO_ACTIVE_LOW>;
+    snps,reset-active-low;
+    /* Reset time is 20ms, 100ms for rtl8211f */
+    snps,reset-delays-us = <0 20000 100000>;
+
+    pinctrl-names = "default";
+    pinctrl-0 = <&eth0m0_miim
+             &eth0m0_tx_bus2
+             &eth0m0_rx_bus2
+             &eth0m0_rgmii_clk
+             &eth0m0_rgmii_bus
+             &ethm0_clk0_25m_out>;
+
+    tx_delay = <0x21>;
+    /* rx_delay = <0x3f>; */
+
+    phy-handle = <&rgmii_phy0>;
+    status = "okay";
+};
+
+&mdio0 {
+    rgmii_phy0: phy@1 {
+        compatible = "ethernet-phy-ieee802.3-c22";
+        reg = <0x1>;
+        clocks = <&cru REFCLKO25M_GMAC0_OUT>;
+    };
+};
+
+//网卡1
+&gmac1 {
+    /* Use rgmii-rxid mode to disable rx delay inside Soc */
+    phy-mode = "rgmii-rxid";
+    clock_in_out = "output";
+
+    snps,reset-gpio = <&gpio3 RK_PA3 GPIO_ACTIVE_LOW>;
+    snps,reset-active-low;
+    /* Reset time is 20ms, 100ms for rtl8211f */
+    snps,reset-delays-us = <0 20000 100000>;
+
+    pinctrl-names = "default";
+    pinctrl-0 = <&eth1m0_miim
+             &eth1m0_tx_bus2
+             &eth1m0_rx_bus2
+             &eth1m0_rgmii_clk
+             &eth1m0_rgmii_bus
+             &ethm0_clk1_25m_out>;
+
+    tx_delay = <0x20>;
+    /* rx_delay = <0x3f>; */
+
+    phy-handle = <&rgmii_phy1>;
+    status = "okay";
+};
+
+
+&mdio1 {
+    rgmii_phy1: phy@1 {
+        compatible = "ethernet-phy-ieee802.3-c22";
+        reg = <0x1>;
+        clocks = <&cru REFCLKO25M_GMAC1_OUT>;
+    };
+};
+
+&i2c2 {
+    status = "okay";
+    //TYPEC接口
+    usbc0: fusb302@22 {
+        compatible = "fcs,fusb302";
+        reg = <0x22>;
+        interrupt-parent = <&gpio0>;
+        interrupts = <RK_PA5 IRQ_TYPE_LEVEL_LOW>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&usbc0_int>;
+        vbus-supply = <&vbus5v0_typec>;
+        status = "okay";
+
+        port {
+            usbc0_role_sw: endpoint {
+                remote-endpoint = <&usb_drd0_role_switch>;
+            };
+        };
+
+        usb_con: connector {
+            compatible = "usb-c-connector";
+            label = "USB-C";
+            data-role = "dual";
+            power-role = "dual";
+            try-power-role = "sink";
+            op-sink-microwatt = <1000000>;
+            sink-pdos =
+                <PDO_FIXED(5000, 1000, PDO_FIXED_USB_COMM)>;
+            source-pdos =
+                <PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
+            mode-switch = <&dp>;
+
+            altmodes {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                altmode@0 {
+                    reg = <0>;
+                    svid = <0xff01>;
+                    vdo = <0xffffffff>;
+                };
+            };
+
+            ports {
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                port@0 {
+                    reg = <0>;
+                    usbc0_orien_sw: endpoint {
+                        remote-endpoint = <&usbdp_phy_orientation_switch>;
+                    };
+                };
+
+                port@1 {
+                    reg = <1>;
+                    dp_altmode_mux: endpoint {
+                        remote-endpoint = <&usbdp_phy_dp_altmode_mux>;
+                    };
+                };
+            };
+        };
+    };
+};
+
+&i2c3 {
+    status = "okay";
+    //板载声卡配置
+    es8388: es8388@10 {
+        status = "okay";
+        #sound-dai-cells = <0>;
+        compatible = "everest,es8388", "everest,es8323";
+        reg = <0x10>;
+        clocks = <&mclkout_sai1>;
+        clock-names = "mclk";
+        assigned-clocks = <&mclkout_sai1>;
+        assigned-clock-rates = <12288000>;
+        pinctrl-names = "default";
+        pinctrl-0 = <&sai1m0_mclk>;
+    };
+};
+
+&i2c7 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&i2c7m1_xfer>;
+
+    //加速度计
+    icm42607_acc: icm_acc@68 {
+        status = "okay";
+        compatible = "icm42607_acc";
+        reg = <0x68>;
+        irq-gpio = <&gpio1 RK_PD5 IRQ_TYPE_EDGE_RISING>;
+        irq_enable = <0>;
+        poll_delay_ms = <30>;
+        type = <SENSOR_TYPE_ACCEL>;
+        layout = <4>;
+    };
+
+    //陀螺仪
+    icm42607_gyro: icm_gyro@68 {
+        status = "okay";
+        compatible = "icm42607_gyro";
+        reg = <0x68>;
+        poll_delay_ms = <30>;
+        type = <SENSOR_TYPE_GYROSCOPE>;
+        layout = <4>;
+    };
+};
+
+// NVME固态硬盘
+&pcie0 {
+    reset-gpios = <&gpio2 RK_PB4 GPIO_ACTIVE_HIGH>;
+    status = "okay";
+};
+
+//CAN设备
+&can0 {
+    status = "okay";
+    assigned-clocks = <&cru CLK_CAN0>;
+    assigned-clock-rates = <200000000>;
+    pinctrl-names = "default";
+    pinctrl-0 = <&can0m2_pins>;
+};
+
+//串口5
+&uart5 {
+    status = "okay";
+    pinctrl-0 = <&uart5m1_xfer>;
+};
+
+&pinctrl {
+    //耳机检测引脚
+    headphone {
+        hp_det: hp-det {
+            rockchip,pins = <0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+
+    usb {
+        usb_host_pwren: usb-host-pwren {
+            rockchip,pins = <0 RK_PC7 RK_FUNC_GPIO &pcfg_pull_none>;
+        };
+
+        usb_otg0_pwren: usb-otg0-pwren {
+            rockchip,pins = <0 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;
+        };
+
+        usbc0_int: usbc0-int {
+            rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
+
+    pcie0 {
+        pcie0_pwren: pcie0-pwren {
+            rockchip,pins = <1 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;
+        };
+    };
+};
