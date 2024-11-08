@@ -99,9 +99,31 @@
 			default-state = "on";
 		};
 	};
+
+    //风扇
+    fan: pwm-fan {                                                                                           
+        compatible = "pwm-fan";
+        #cooling-cells = <2>;
+        pwms = <&pwm2_8ch_5 0 400000 0>; 
+        cooling-levels = <0 50 100 150 200 255>;
+        rockchip,temp-trips = <
+            50000   1
+            55000   2
+            60000   3
+            65000   4
+            70000   5
+        >;
+    };
 }; 
 
+// 用户LED PWM
 &pwm1_6ch_0 {
+    status = "okay";
+};
+
+// 风扇PWM
+&pwm2_8ch_5 {
+    pinctrl-0 = <&pwm2m1_ch5>;
     status = "okay";
 };
 
@@ -176,6 +198,20 @@
 
 &i2c2 {
     status = "okay";
+    //RTC实时时钟
+    hym8563: hym8563@51 {
+        compatible = "haoyu,hym8563";
+        reg = <0x51>;
+        #clock-cells = <0>;
+        clock-frequency = <32768>;
+        clock-output-names = "hym8563";
+        pinctrl-names = "default";
+        pinctrl-0 = <&hym8563_int>;
+        interrupt-parent = <&gpio0>;
+        interrupts = <RK_PA0 IRQ_TYPE_LEVEL_LOW>;
+        wakeup-source;
+    };
+
     //TYPEC接口
     usbc0: fusb302@22 {
         compatible = "fcs,fusb302";
@@ -284,6 +320,16 @@
     };
 };
 
+//串行音频接口
+&sai1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&sai1m0_lrck
+             &sai1m0_sclk
+             &sai1m0_sdi0
+             &sai1m0_sdo0>;
+};
+
 // NVME固态硬盘
 &pcie0 {
     reset-gpios = <&gpio2 RK_PB4 GPIO_ACTIVE_HIGH>;
@@ -306,10 +352,16 @@
 };
 
 &pinctrl {
+    //RTC中断引脚
+    hym8563 {                                                                                                
+        hym8563_int: hym8563-int {
+            rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+    };
     //耳机检测引脚
     headphone {
         hp_det: hp-det {
-            rockchip,pins = <0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_up>;
+            rockchip,pins = <0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>;
         };
     };
 
@@ -324,12 +376,6 @@
 
         usbc0_int: usbc0-int {
             rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
-        };
-    };
-
-    pcie0 {
-        pcie0_pwren: pcie0-pwren {
-            rockchip,pins = <1 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;
         };
     };
 };

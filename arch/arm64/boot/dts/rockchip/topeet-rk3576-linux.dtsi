@@ -184,6 +184,11 @@
         };
     };
 
+    pcie0 {
+        pcie0_pwren: pcie0-pwren {
+            rockchip,pins = <1 RK_PD1 RK_FUNC_GPIO &pcfg_pull_none>;
+        };
+    };
 };
 
 &combphy0_ps {
@@ -338,7 +343,7 @@
 	disable-wp;
 	sd-uhs-sdr104;
 	vqmmc-supply = <&vccio_sd_s0>;
-	status = "disabled";
+	status = "okay";
 };
 
 &tsadc {
