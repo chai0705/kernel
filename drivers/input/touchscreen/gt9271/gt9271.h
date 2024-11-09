@@ -391,12 +391,4 @@ extern u16 total_len;
                                        }while (0)
 
 //*****************************End of Part III********************************
-#ifndef TRUE
-#define TRUE    1
-#endif
-
-#ifndef FALSE
-#define FALSE   0
-#endif
-
 #endif /* _GOODIX_GT9XX_H_ */

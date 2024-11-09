@@ -447,6 +447,15 @@ config TOUCHSCREEN_GT9XX
 	  code includes that in its table of IIC devices.
 	  If unsure, say N.
 
+config TOUCHSCREEN_GT9271
+        tristate "Goodix gt9271 support for rockchip platform"
+        depends on I2C && ARCH_ROCKCHIP
+        help
+          Say Y here if you have a touchscreen interface using the gt9271
+          on Rockchip platform, and your board-specific initialization
+          code includes that in its table of IIC devices.
+          If unsure, say N.
+
 config TOUCHSCREEN_HIDEEP
 	tristate "HiDeep Touch IC"
 	depends on I2C

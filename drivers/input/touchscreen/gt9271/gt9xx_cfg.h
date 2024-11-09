@@ -24,6 +24,11 @@ u8 gtp_dat_gt11[] = {
 	#include "WGJ89006B_GT911_Config_20140625_085816_0X43.cfg"
 };
 
+/* CFG for GT911 */
+u8 gtp_dat_gt9271[] = {
+	/* <1280, 800>*/
+	#include "1007_GT9271_VER69_1280x800_32X20_Config_20240120_104355.cfg"
+};
 u8 gtp_dat_gt9110[] = {
 	/* <1200, 1920>*/
 	#include "GT9110P(2020)V71_Config_20201028_170326.cfg"
