@@ -2,8 +2,9 @@
 // #define LCD_TYPE_MIPI0  //VP1 
 // #define LCD_TYPE_LVDS_7_0  //VP1                                                                            //#define LCD_TYPE_LVDS_10_1_1280x800_GT911  //VP2
 // #define LCD_TYPE_LVDS_10_1_1280x800_GT9271 //VP1
-// #define LCD_TYPE_LVDS_10_1_1024x600_GT911  //VP2
-//#define LCD_TYPE_TYPEC_DP  //VP2
+// #define LCD_TYPE_LVDS_10_1_1024x600_GT911  //VP1
+
+#define LCD_TYPE_TYPEC_DP  //VP2
 
 /{
 backlight: backlight {
@@ -763,5 +764,29 @@ backlight: backlight {
         max-x = <1024>;
         max-y = <600>;
     };
+};
+#endif
+
+#if defined(LCD_TYPE_TYPEC_DP)
+&dp {
+	status = "okay";
+	svid = <0xff01>;
+};
+
+&dp0 {
+	status = "okay";
+};
+
+&dp0_in_vp2 {
+	status = "okay";
+};
+
+&route_dp0 {
+    status = "okay";
+    connect = <&vp2_out_dp0>;
+};
+
+&dp0_sound {
+    status = "okay";
 };
 #endif
