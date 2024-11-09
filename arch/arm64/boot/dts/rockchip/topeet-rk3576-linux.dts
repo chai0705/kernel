@@ -11,7 +11,8 @@
 #include "topeet-rk3576-linux.dtsi"
 #include <dt-bindings/usb/pd.h>
 #include "rk3576-rk806.dtsi"
-#include "topeet-screen-lcds.dts"
+#include "topeet-screen-lcds.dtsi"
+#include "topeet-camera-config.dtsi"
 
 / {
     model = "TOPEET RK3576 EVB Board";
