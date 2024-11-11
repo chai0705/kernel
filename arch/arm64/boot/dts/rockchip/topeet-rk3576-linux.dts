@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: (GPL-2.0+ OR MIT)                                                                
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Copyright (c) 2024 Rockchip Electronics Co., Ltd.
  *
@@ -56,7 +56,7 @@
         status = "okay";
         compatible = "rockchip,multicodecs-card";
         rockchip,card-name = "rockchip-es8388";
-        hp-det-gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_LOW>;
+        hp-det-gpio = <&gpio0 RK_PD3 GPIO_ACTIVE_HIGH>;
         io-channels = <&saradc 3>;
         io-channel-names = "adc-detect";
         keyup-threshold-microvolt = <1800000>;
@@ -102,10 +102,10 @@
 	};
 
     //风扇
-    fan: pwm-fan {                                                                                           
+    fan: pwm-fan {
         compatible = "pwm-fan";
         #cooling-cells = <2>;
-        pwms = <&pwm2_8ch_5 0 400000 0>; 
+        pwms = <&pwm2_8ch_5 0 400000 0>;
         cooling-levels = <0 50 100 150 200 255>;
         rockchip,temp-trips = <
             50000   1
@@ -115,7 +115,7 @@
             70000   5
         >;
     };
-}; 
+};
 
 // 用户LED PWM
 &pwm1_6ch_0 {
@@ -355,7 +355,7 @@
 
 &pinctrl {
     //RTC中断引脚
-    hym8563 {                                                                                                
+    hym8563 {
         hym8563_int: hym8563-int {
             rockchip,pins = <0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>;
         };
@@ -363,7 +363,7 @@
     //耳机检测引脚
     headphone {
         hp_det: hp-det {
-            rockchip,pins = <0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_none>;
+            rockchip,pins = <0 RK_PD3 RK_FUNC_GPIO &pcfg_pull_up>;
         };
     };
 
