@@ -29,13 +29,14 @@
 #include <linux/skbuff.h>
 #include <linux/usb.h>
 #include <linux/dcache.h>
+#include <linux/reboot.h>
 #include <net/sock.h>
 #include <asm/unaligned.h>
 
 #include "rtk_bt.h"
 #include "rtk_misc.h"
 
-#define VERSION "3.1"
+#define VERSION "3.1.210ba4c.20240130-154847"
 
 #ifdef BTCOEX
 #include "rtk_coex.h"
@@ -44,43 +45,68 @@
 #ifdef RTKBT_SWITCH_PATCH
 #include <linux/semaphore.h>
 #include <net/bluetooth/hci_core.h>
-DEFINE_SEMAPHORE(switch_sem);
+static DEFINE_SEMAPHORE(switch_sem);
 #endif
 
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 7, 1)
-static bool reset = 0;
+static bool reset = true;
 #endif
 
 static struct usb_driver btusb_driver;
-static struct usb_device_id btusb_table[] = {
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+static u16 iso_min_conn_handle = 0x1b;
+#endif
+
+static const struct usb_device_id btusb_table[] = {
+	/* Generic Bluetooth USB device */
+	{ USB_DEVICE_INFO(0xe0, 0x01, 0x01) },
+
+	/* Generic Bluetooth USB interface */
+	{ USB_INTERFACE_INFO(0xe0, 0x01, 0x01) },
+
+	{}
+};
+
+static const struct usb_device_id blacklist_table[] = {
 	{
-		.match_flags = USB_DEVICE_ID_MATCH_VENDOR |
-			USB_DEVICE_ID_MATCH_INT_INFO,
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
 		.idVendor = 0x0bda,
-		.bInterfaceClass = 0xe0,
-		.bInterfaceSubClass = 0x01,
-		.bInterfaceProtocol = 0x01
 	}, {
-		.match_flags = USB_DEVICE_ID_MATCH_VENDOR |
-			USB_DEVICE_ID_MATCH_INT_INFO,
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
 		.idVendor = 0x13d3,
-		.bInterfaceClass = 0xe0,
-		.bInterfaceSubClass = 0x01,
-		.bInterfaceProtocol = 0x01
 	}, {
-		.match_flags = USB_DEVICE_ID_MATCH_VENDOR |
-			USB_DEVICE_ID_MATCH_INT_INFO,
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
 		.idVendor = 0x0489,
-		.bInterfaceClass = 0xe0,
-		.bInterfaceSubClass = 0x01,
-		.bInterfaceProtocol = 0x01
 	}, {
-		.match_flags = USB_DEVICE_ID_MATCH_VENDOR |
-			USB_DEVICE_ID_MATCH_INT_INFO,
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
 		.idVendor = 0x1358,
-		.bInterfaceClass = 0xe0,
-		.bInterfaceSubClass = 0x01,
-		.bInterfaceProtocol = 0x01
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x04ca,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x2ff8,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x0b05,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x0930,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x10ec,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x04c5,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x0cb5,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x0cb8,
+	}, {
+		.match_flags = USB_DEVICE_ID_MATCH_VENDOR,
+		.idVendor = 0x04b8,
 	}, { }
 };
 
@@ -104,20 +130,6 @@ static struct btusb_data *rtk_alloc(struct usb_interface *intf)
 }
 
 MODULE_DEVICE_TABLE(usb, btusb_table);
-
-static int inc_tx(struct btusb_data *data)
-{
-	unsigned long flags;
-	int rv;
-
-	spin_lock_irqsave(&data->txlock, flags);
-	rv = test_bit(BTUSB_SUSPENDING, &data->flags);
-	if (!rv)
-		data->tx_in_flight++;
-	spin_unlock_irqrestore(&data->txlock, flags);
-
-	return rv;
-}
 
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
 static inline void btusb_free_frags(struct btusb_data *data)
@@ -161,7 +173,11 @@ static int btusb_recv_intr(struct btusb_data *data, void *buffer, int count)
 		}
 
 		len = min_t(uint, bt_cb(skb)->expect, count);
+#if HCI_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+		skb_put_data(skb, buffer, len);
+#else
 		memcpy(skb_put(skb, len), buffer, len);
+#endif
 
 		count -= len;
 		buffer += len;
@@ -216,15 +232,26 @@ static int btusb_recv_bulk(struct btusb_data *data, void *buffer, int count)
 		}
 
 		len = min_t(uint, bt_cb(skb)->expect, count);
+#if HCI_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+		skb_put_data(skb, buffer, len);
+#else
 		memcpy(skb_put(skb, len), buffer, len);
+#endif
 
 		count -= len;
 		buffer += len;
 		bt_cb(skb)->expect -= len;
 
 		if (skb->len == HCI_ACL_HDR_SIZE) {
-			__le16 dlen = hci_acl_hdr(skb)->dlen;
+			struct hci_acl_hdr *h = hci_acl_hdr(skb);
+			__le16 dlen = h->dlen;
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+			__u16 handle = __le16_to_cpu(h->handle) & 0xfff;
 
+			if(handle >= iso_min_conn_handle) {
+				bt_cb(skb)->pkt_type = HCI_ISODATA_PKT;
+			}
+#endif
 			/* Complete ACL header */
 			bt_cb(skb)->expect = __le16_to_cpu(dlen);
 
@@ -250,10 +277,42 @@ static int btusb_recv_bulk(struct btusb_data *data, void *buffer, int count)
 	return err;
 }
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+static int btrtl_usb_recv_isoc(u16 pos, u8 *data, u8 *p, int len,
+			u16 wMaxPacketSize)
+{
+	u8 *prev;
+
+	if (pos >= HCI_SCO_HDR_SIZE && pos >= wMaxPacketSize &&
+	    len == wMaxPacketSize && !(pos % wMaxPacketSize) &&
+	    wMaxPacketSize >= 10 && p[0] == data[0] && p[1] == data[1]) {
+
+		prev = data + (pos - wMaxPacketSize);
+
+		/* Detect the sco data of usb isoc pkt duplication. */
+		if (!memcmp(p + 2, prev + 2, 8))
+			return -EILSEQ;
+
+		if (wMaxPacketSize >= 12 &&
+		    p[2] == prev[6] && p[3] == prev[7] &&
+		    p[4] == prev[4] && p[5] == prev[5] &&
+		    p[6] == prev[10] && p[7] == prev[11] &&
+		    p[8] == prev[8] && p[9] == prev[9]) {
+			return -EILSEQ;
+		}
+	}
+
+	return 0;
+}
+#endif
+
 static int btusb_recv_isoc(struct btusb_data *data, void *buffer, int count)
 {
 	struct sk_buff *skb;
 	int err = 0;
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	u16 wMaxPacketSize = le16_to_cpu(data->isoc_rx_ep->wMaxPacketSize);
+#endif
 
 	spin_lock(&data->rxlock);
 	skb = data->sco_skb;
@@ -273,7 +332,24 @@ static int btusb_recv_isoc(struct btusb_data *data, void *buffer, int count)
 		}
 
 		len = min_t(uint, bt_cb(skb)->expect, count);
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+		/* Gaps in audio could be heard while streaming WBS using USB
+		 * alt settings 3 on some platforms.
+		 * Add the function to detect it.
+		 */
+		if (test_bit(BTUSB_USE_ALT3_FOR_WBS, &data->flags)) {
+			err = btrtl_usb_recv_isoc(skb->len, skb->data, buffer,
+					len, wMaxPacketSize);
+			if (err)
+				break;
+		}
+#endif
+#if HCI_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+		skb_put_data(skb, buffer, len);
+#else
 		memcpy(skb_put(skb, len), buffer, len);
+#endif
 
 		count -= len;
 		buffer += len;
@@ -304,6 +380,21 @@ static int btusb_recv_isoc(struct btusb_data *data, void *buffer, int count)
 
 	return err;
 }
+#else
+static int inc_tx(struct btusb_data *data)
+{
+	unsigned long flags;
+	int rv;
+
+	spin_lock_irqsave(&data->txlock, flags);
+	rv = test_bit(BTUSB_SUSPENDING, &data->flags);
+	if (!rv)
+		data->tx_in_flight++;
+	spin_unlock_irqrestore(&data->txlock, flags);
+
+	return rv;
+}
+
 #endif
 
 static void btusb_intr_complete(struct urb *urb)
@@ -583,6 +674,51 @@ retry:
 	}
 }
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+static inline void __fill_isoc_descriptor_msbc(struct urb *urb, int len,
+					       int mtu, struct btusb_data *data)
+{
+	int i = 0, offset = 0;
+	unsigned int interval;
+
+	BT_DBG("len %d mtu %d", len, mtu);
+
+	/* For mSBC ALT 6 settings some Realtek chips need to transmit the data
+	 * continuously without the zero length of USB packets.
+	 */
+	if (btrealtek_test_flag(data->hdev, REALTEK_ALT6_CONTINUOUS_TX_CHIP))
+		goto ignore_usb_alt6_packet_flow;
+
+	/* For mSBC ALT 6 setting the host will send the packet at continuous
+	 * flow. As per core spec 5, vol 4, part B, table 2.1. For ALT setting
+	 * 6 the HCI PACKET INTERVAL should be 7.5ms for every usb packets.
+	 * To maintain the rate we send 63bytes of usb packets alternatively for
+	 * 7ms and 8ms to maintain the rate as 7.5ms.
+	 */
+	if (data->usb_alt6_packet_flow) {
+		interval = 7;
+		data->usb_alt6_packet_flow = false;
+	} else {
+		interval = 6;
+		data->usb_alt6_packet_flow = true;
+	}
+
+	for (i = 0; i < interval; i++) {
+		urb->iso_frame_desc[i].offset = offset;
+		urb->iso_frame_desc[i].length = offset;
+	}
+
+ignore_usb_alt6_packet_flow:
+	if (len && i < BTUSB_MAX_ISOC_FRAMES) {
+		urb->iso_frame_desc[i].offset = offset;
+		urb->iso_frame_desc[i].length = len;
+		i++;
+	}
+
+	urb->number_of_packets = i;
+}
+#endif
+
 static inline void __fill_isoc_descriptor(struct urb *urb, int len, int mtu)
 {
 	int i, offset = 0;
@@ -632,6 +768,12 @@ static int btusb_submit_isoc_urb(struct hci_dev *hdev, gfp_t mem_flags)
 
 	pipe = usb_rcvisocpipe(data->udev, data->isoc_rx_ep->bEndpointAddress);
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 2, 14)
+	usb_fill_int_urb(urb, data->udev, pipe, buf, size, btusb_isoc_complete,
+			 hdev, data->isoc_rx_ep->bInterval);
+
+	urb->transfer_flags = URB_FREE_BUFFER | URB_ISO_ASAP;
+#else
 	urb->dev = data->udev;
 	urb->pipe = pipe;
 	urb->context = hdev;
@@ -641,6 +783,7 @@ static int btusb_submit_isoc_urb(struct hci_dev *hdev, gfp_t mem_flags)
 	urb->transfer_flags = URB_FREE_BUFFER | URB_ISO_ASAP;
 	urb->transfer_buffer = buf;
 	urb->transfer_buffer_length = size;
+#endif
 
 	__fill_isoc_descriptor(urb, size,
 			       le16_to_cpu(data->isoc_rx_ep->wMaxPacketSize));
@@ -691,25 +834,65 @@ static void btusb_isoc_tx_complete(struct urb *urb)
 	struct sk_buff *skb = urb->context;
 	struct hci_dev *hdev = (struct hci_dev *)skb->dev;
 
-	//RTKBT_DBG("%s: urb %p status %d count %d",
-	//__func__, urb, urb->status, urb->actual_length);
+	RTKBT_DBG("%s: urb %p status %d count %d", __func__,
+			urb, urb->status, urb->actual_length);
 
-	if (skb && hdev) {
-		if (!test_bit(HCI_RUNNING, &hdev->flags))
-			goto done;
+	if (!test_bit(HCI_RUNNING, &hdev->flags))
+		goto done;
 
-		if (!urb->status)
-			hdev->stat.byte_tx += urb->transfer_buffer_length;
-		else
-			hdev->stat.err_tx++;
-	} else
-		RTKBT_ERR("%s: skb 0x%p hdev 0x%p", __func__, skb, hdev);
+	if (!urb->status)
+		hdev->stat.byte_tx += urb->transfer_buffer_length;
+	else
+		hdev->stat.err_tx++;
 
 done:
 	kfree(urb->setup_packet);
 
 	kfree_skb(skb);
 }
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+static int rtl_read_iso_handle_range(struct hci_dev *hdev)
+{
+	struct sk_buff *skb;
+	struct __rp {
+		u8 status;
+		u8 min_handle[2];
+	} *rp;
+	int ret = -EIO;
+
+	skb = __hci_cmd_sync(hdev, 0xfdab, 0, NULL, HCI_CMD_TIMEOUT);
+	if (IS_ERR(skb)) {
+		return PTR_ERR(skb);
+	}
+
+	/* FIXME: if the return status is not zero, __hci_cmd_sync() would
+	 * return an error and we would not reach here.
+	 */
+	if (skb->data[0]) {
+		RTKBT_ERR("%s: Read failed, status %0x", hdev->name,
+			  skb->data[0]);
+		goto err;
+	}
+
+	if (skb->len < sizeof(*rp)) {
+		RTKBT_WARN("%s: The len %u of rp is too short", __func__,
+			  skb->len);
+		goto err;
+	}
+
+	rp = (void *)skb->data;
+	iso_min_conn_handle = (u16)rp->min_handle[1] << 8 | rp->min_handle[0];
+	RTKBT_DBG("ISO handle range (handle >= %04x)", iso_min_conn_handle);
+
+	kfree_skb(skb);
+
+	return 0;
+err:
+	kfree_skb(skb);
+	return ret;
+}
+#endif
 
 static int btusb_open(struct hci_dev *hdev)
 {
@@ -726,7 +909,7 @@ static int btusb_open(struct hci_dev *hdev)
 	/*******************************/
 	if (0 == atomic_read(&hdev->promisc)) {
 		RTKBT_ERR("btusb_open hdev->promisc ==0");
-		err = -1;
+		//err = -1;
 		//goto failed;
 	}
 
@@ -735,7 +918,14 @@ static int btusb_open(struct hci_dev *hdev)
 		goto failed;
 	/*******************************/
 
-	RTKBT_INFO("%s set HCI_RUNNING", __func__);
+	err = setup_btrealtek_flag(data->intf, hdev);
+	if (err < 0)
+		RTKBT_WARN("setup_btrealtek_flag incorrect!");
+
+	RTKBT_INFO("%s set HCI UP RUNNING", __func__);
+	if (test_and_set_bit(HCI_UP, &hdev->flags))
+		goto done;
+
 	if (test_and_set_bit(HCI_RUNNING, &hdev->flags))
 		goto done;
 
@@ -773,6 +963,32 @@ failed:
 	RTKBT_ERR("%s failed", __FUNCTION__);
 	return err;
 }
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+static int btusb_setup(struct hci_dev *hdev)
+{
+	rtl_read_iso_handle_range(hdev);
+	return 0;
+}
+#endif
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
+static int btusb_shutdown(struct hci_dev *hdev)
+{
+	struct sk_buff *skb;
+	int ret;
+
+	skb = __hci_cmd_sync(hdev, HCI_OP_RESET, 0, NULL, HCI_INIT_TIMEOUT);
+	if (IS_ERR(skb)) {
+		ret = PTR_ERR(skb);
+		bt_dev_err(hdev, "HCI reset during shutdown failed");
+		return ret;
+	}
+	kfree_skb(skb);
+
+	return 0;
+}
+#endif
 
 static void btusb_stop_traffic(struct btusb_data *data)
 {
@@ -873,12 +1089,156 @@ static int btusb_flush(struct hci_dev *hdev)
 	return 0;
 }
 
-const char pkt_ind[][8] = {
+static const char pkt_ind[][8] = {
 	[HCI_COMMAND_PKT] = "cmd",
 	[HCI_ACLDATA_PKT] = "acl",
 	[HCI_SCODATA_PKT] = "sco",
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	[HCI_ISODATA_PKT] = "iso",
+#endif
 };
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
+static struct urb *alloc_ctrl_urb(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	struct usb_ctrlrequest *dr;
+	struct urb *urb;
+	unsigned int pipe;
+
+	urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!urb)
+		return ERR_PTR(-ENOMEM);
+
+	dr = kmalloc(sizeof(*dr), GFP_KERNEL);
+	if (!dr) {
+		usb_free_urb(urb);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	dr->bRequestType = data->cmdreq_type;
+	dr->bRequest     = 0;
+	dr->wIndex       = 0;
+	dr->wValue       = 0;
+	dr->wLength      = __cpu_to_le16(skb->len);
+
+	pipe = usb_sndctrlpipe(data->udev, 0x00);
+
+	usb_fill_control_urb(urb, data->udev, pipe, (void *)dr,
+			     skb->data, skb->len, btusb_tx_complete, skb);
+
+	skb->dev = (void *)hdev;
+
+	return urb;
+}
+
+static struct urb *alloc_bulk_urb(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	struct urb *urb;
+	unsigned int pipe;
+
+	if (!data->bulk_tx_ep)
+		return ERR_PTR(-ENODEV);
+
+	urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!urb)
+		return ERR_PTR(-ENOMEM);
+
+	pipe = usb_sndbulkpipe(data->udev, data->bulk_tx_ep->bEndpointAddress);
+
+	usb_fill_bulk_urb(urb, data->udev, pipe,
+			  skb->data, skb->len, btusb_tx_complete, skb);
+
+	skb->dev = (void *)hdev;
+
+	return urb;
+}
+
+static struct urb *alloc_isoc_urb(struct hci_dev *hdev, struct sk_buff *skb)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	struct urb *urb;
+	unsigned int pipe;
+
+	if (!data->isoc_tx_ep)
+		return ERR_PTR(-ENODEV);
+
+	urb = usb_alloc_urb(BTUSB_MAX_ISOC_FRAMES, GFP_KERNEL);
+	if (!urb)
+		return ERR_PTR(-ENOMEM);
+
+	pipe = usb_sndisocpipe(data->udev, data->isoc_tx_ep->bEndpointAddress);
+
+	usb_fill_int_urb(urb, data->udev, pipe,
+			 skb->data, skb->len, btusb_isoc_tx_complete,
+			 skb, data->isoc_tx_ep->bInterval);
+
+	urb->transfer_flags  = URB_ISO_ASAP;
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	if (data->isoc_altsetting == 6)
+		__fill_isoc_descriptor_msbc(urb, skb->len,
+				le16_to_cpu(data->isoc_tx_ep->wMaxPacketSize),
+				data);
+	else
+		__fill_isoc_descriptor(urb, skb->len,
+				le16_to_cpu(data->isoc_tx_ep->wMaxPacketSize));
+#else
+	__fill_isoc_descriptor(urb, skb->len,
+				le16_to_cpu(data->isoc_tx_ep->wMaxPacketSize));
+#endif
+
+	skb->dev = (void *)hdev;
+
+	return urb;
+}
+
+static int submit_tx_urb(struct hci_dev *hdev, struct urb *urb)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	int err;
+
+	usb_anchor_urb(urb, &data->tx_anchor);
+
+	err = usb_submit_urb(urb, GFP_KERNEL);
+	if (err < 0) {
+		if (err != -EPERM && err != -ENODEV)
+			RTKBT_ERR("%s urb %p submission failed (%d)",
+				   hdev->name, urb, -err);
+		kfree(urb->setup_packet);
+		usb_unanchor_urb(urb);
+	} else {
+		usb_mark_last_busy(data->udev);
+	}
+
+	usb_free_urb(urb);
+	return err;
+}
+
+static int submit_or_queue_tx_urb(struct hci_dev *hdev, struct urb *urb)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	unsigned long flags;
+	bool suspending;
+
+	spin_lock_irqsave(&data->txlock, flags);
+	suspending = test_bit(BTUSB_SUSPENDING, &data->flags);
+	if (!suspending)
+		data->tx_in_flight++;
+	spin_unlock_irqrestore(&data->txlock, flags);
+
+	if (!suspending)
+		return submit_tx_urb(hdev, urb);
+
+	usb_anchor_urb(urb, &data->deferred);
+	schedule_work(&data->waker);
+
+	usb_free_urb(urb);
+	return 0;
+}
+
+#endif
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 int btusb_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 {
@@ -888,14 +1248,20 @@ int btusb_send_frame(struct sk_buff *skb)
 	struct hci_dev *hdev = (struct hci_dev *)skb->dev;
 #endif
 
+	struct urb *urb;
+#if HCI_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
 	struct btusb_data *data = GET_DRV_DATA(hdev);
 	struct usb_ctrlrequest *dr;
-	struct urb *urb;
 	unsigned int pipe;
 	int err;
+#endif
 
-	//RTKBT_DBG("%s", hdev->name);
+//	RTKBT_DBG("%s", hdev->name);
 
+	/* After Kernel version 4.4.0, move the check into the
+	 * hci_send_frame function before calling hdev->send
+	 */
+#if HCI_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
 	if (!test_bit(HCI_RUNNING, &hdev->flags)) {
 		/* If the parameter is wrong, the hdev isn't the correct
 		 * one. Then no HCI commands can be sent.
@@ -903,13 +1269,15 @@ int btusb_send_frame(struct sk_buff *skb)
 		RTKBT_ERR("HCI is not running");
 		return -EBUSY;
 	}
+#endif
 
 	/* Before kernel/hci version 3.13.0, the skb->dev is set before
 	 * entering btusb_send_frame(). So there is no need to set it here.
 	 *
 	 * The skb->dev will be used in the callbacks when urb transfer
 	 * completes. See btusb_tx_complete() and btusb_isoc_tx_complete() */
-#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) && \
+    HCI_VERSION_CODE < KERNEL_VERSION(3, 18, 0)
 	skb->dev = (void *)hdev;
 #endif
 
@@ -920,6 +1288,14 @@ int btusb_send_frame(struct sk_buff *skb)
 #ifdef BTCOEX
 		rtk_btcoex_parse_cmd(skb->data, skb->len);
 #endif
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
+		urb = alloc_ctrl_urb(hdev, skb);
+		if (IS_ERR(urb))
+			return PTR_ERR(urb);
+
+		hdev->stat.cmd_tx++;
+		return submit_or_queue_tx_urb(hdev, urb);
+#else
 		urb = usb_alloc_urb(0, GFP_ATOMIC);
 		if (!urb)
 			return -ENOMEM;
@@ -945,11 +1321,24 @@ int btusb_send_frame(struct sk_buff *skb)
 		hdev->stat.cmd_tx++;
 		break;
 
+#endif
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	case HCI_ISODATA_PKT:
+#endif
 	case HCI_ACLDATA_PKT:
 		print_acl(skb, 1);
 #ifdef BTCOEX
-		rtk_btcoex_parse_l2cap_data_tx(skb->data, skb->len);
+		if(bt_cb(skb)->pkt_type == HCI_ACLDATA_PKT)
+			rtk_btcoex_parse_l2cap_data_tx(skb->data, skb->len);
 #endif
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
+		urb = alloc_bulk_urb(hdev, skb);
+		if (IS_ERR(urb))
+			return PTR_ERR(urb);
+
+		hdev->stat.acl_tx++;
+		return submit_or_queue_tx_urb(hdev, urb);
+#else
 		if (!data->bulk_tx_ep)
 			return -ENODEV;
 
@@ -966,7 +1355,22 @@ int btusb_send_frame(struct sk_buff *skb)
 		hdev->stat.acl_tx++;
 		break;
 
+#endif
 	case HCI_SCODATA_PKT:
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 18, 0)
+		if (hci_conn_num(hdev, SCO_LINK) < 1)
+			return -ENODEV;
+
+		urb = alloc_isoc_urb(hdev, skb);
+		if (IS_ERR(urb))
+			return PTR_ERR(urb);
+
+		hdev->stat.sco_tx++;
+		return submit_tx_urb(hdev, urb);
+	}
+
+	return -EILSEQ;
+#else
 		if (!data->isoc_tx_ep || SCO_NUM < 1)
 			return -ENODEV;
 
@@ -992,6 +1396,7 @@ int btusb_send_frame(struct sk_buff *skb)
 
 	default:
 		return -EILSEQ;
+
 	}
 
 	err = inc_tx(data);
@@ -1014,11 +1419,13 @@ skip_waking:
 	} else {
 		usb_mark_last_busy(data->udev);
 	}
-	usb_free_urb(urb);
 
 done:
+	usb_free_urb(urb);
 	return err;
+#endif
 }
+
 
 #if HCI_VERSION_CODE < KERNEL_VERSION(3, 4, 0)
 static void btusb_destruct(struct hci_dev *hdev)
@@ -1037,6 +1444,9 @@ static void btusb_notify(struct hci_dev *hdev, unsigned int evt)
 	if (SCO_NUM != data->sco_num) {
 		data->sco_num = SCO_NUM;
 		RTKBT_DBG("%s: Update sco num %d", __func__, data->sco_num);
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+		data->air_mode = evt;
+#endif
 		schedule_work(&data->work);
 	}
 }
@@ -1086,12 +1496,73 @@ static inline int __set_isoc_interface(struct hci_dev *hdev, int altsetting)
 	return 0;
 }
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+static int btusb_switch_alt_setting(struct hci_dev *hdev, int new_alts)
+{
+	struct btusb_data *data = hci_get_drvdata(hdev);
+	int err;
+
+	if (data->isoc_altsetting != new_alts) {
+		unsigned long flags;
+
+		clear_bit(BTUSB_ISOC_RUNNING, &data->flags);
+		usb_kill_anchored_urbs(&data->isoc_anchor);
+
+		/* When isochronous alternate setting needs to be
+		 * changed, because SCO connection has been added
+		 * or removed, a packet fragment may be left in the
+		 * reassembling state. This could lead to wrongly
+		 * assembled fragments.
+		 *
+		 * Clear outstanding fragment when selecting a new
+		 * alternate setting.
+		 */
+		spin_lock_irqsave(&data->rxlock, flags);
+		kfree_skb(data->sco_skb);
+		data->sco_skb = NULL;
+		spin_unlock_irqrestore(&data->rxlock, flags);
+
+		err = __set_isoc_interface(hdev, new_alts);
+		if (err < 0)
+			return err;
+	}
+
+	if (!test_and_set_bit(BTUSB_ISOC_RUNNING, &data->flags)) {
+		if (btusb_submit_isoc_urb(hdev, GFP_KERNEL) < 0)
+			clear_bit(BTUSB_ISOC_RUNNING, &data->flags);
+		else
+			btusb_submit_isoc_urb(hdev, GFP_KERNEL);
+	}
+
+	return 0;
+}
+
+static struct usb_host_interface *btusb_find_altsetting(struct btusb_data *data,
+							int alt)
+{
+	struct usb_interface *intf = data->isoc;
+	int i;
+
+	BT_DBG("Looking for Alt no :%d", alt);
+
+	if (!intf)
+		return NULL;
+
+	for (i = 0; i < intf->num_altsetting; i++) {
+		if (intf->altsetting[i].desc.bAlternateSetting == alt)
+			return &intf->altsetting[i];
+	}
+
+	return NULL;
+}
+#endif
+
 static void btusb_work(struct work_struct *work)
 {
 	struct btusb_data *data = container_of(work, struct btusb_data, work);
 	struct hci_dev *hdev = data->hdev;
 	int err;
-	int new_alts;
+	int new_alts = 0;
 
 	RTKBT_DBG("%s: sco num %d", __func__, data->sco_num);
 	if (data->sco_num > 0) {
@@ -1108,7 +1579,29 @@ static void btusb_work(struct work_struct *work)
 
 			set_bit(BTUSB_DID_ISO_RESUME, &data->flags);
 		}
-#if HCI_VERSION_CODE > KERNEL_VERSION(3, 7, 1)
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+		if (data->air_mode == HCI_NOTIFY_ENABLE_SCO_CVSD) {
+			if (hdev->voice_setting & 0x0020) {
+				static const int alts[3] = { 2, 4, 5 };
+				new_alts = alts[data->sco_num - 1];
+			} else {
+				new_alts = data->sco_num;
+			}
+		} else if (data->air_mode == HCI_NOTIFY_ENABLE_SCO_TRANSP) {
+			if (btusb_find_altsetting(data, 6))
+				new_alts = 6;
+			else if (btusb_find_altsetting(data, 3) &&
+				 hdev->sco_mtu >= 72 &&
+				 test_bit(BTUSB_USE_ALT3_FOR_WBS, &data->flags))
+				new_alts = 3;
+			else
+				new_alts = 1;
+		}
+
+		if (btusb_switch_alt_setting(hdev, new_alts) < 0)
+				RTKBT_ERR("set USB alt:(%d) failed!", new_alts);
+#else
+#if HCI_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)
 		if (hdev->voice_setting & 0x0020) {
 			static const int alts[3] = { 2, 4, 5 };
 			new_alts = alts[data->sco_num - 1];
@@ -1136,6 +1629,7 @@ static void btusb_work(struct work_struct *work)
 			else
 				btusb_submit_isoc_urb(hdev, GFP_KERNEL);
 		}
+#endif
 	} else {
 		clear_bit(BTUSB_ISOC_RUNNING, &data->flags);
 		mdelay(URB_CANCELING_DELAY_MS);
@@ -1162,7 +1656,58 @@ static void btusb_waker(struct work_struct *work)
 	RTKBT_DBG("%s end", __FUNCTION__);
 }
 
-int rtkbt_pm_notify(struct notifier_block *notifier,
+#ifdef RTKBT_TV_POWERON_WHITELIST
+static int rtkbt_lookup_le_device_poweron_whitelist(struct hci_dev *hdev,
+						struct usb_device *udev)
+{
+	struct hci_conn_params *p;
+	u8 *cmd;
+	int result = 0;
+
+	hci_dev_lock(hdev);
+	list_for_each_entry(p, &hdev->le_conn_params, list) {
+#if 0 // for debug message
+		RTKBT_DBG("%s(): auto_connect = %d", __FUNCTION__, p->auto_connect);
+		RTKBT_DBG("%s(): addr_type = 0x%02x", __FUNCTION__, p->addr_type);
+		RTKBT_DBG("%s(): addr=%02x:%02x:%02x:%02x:%02x:%02x", __FUNCTION__,
+                                p->addr.b[5], p->addr.b[4], p->addr.b[3],
+                                p->addr.b[2], p->addr.b[1], p->addr.b[0]);
+#endif
+		if ( p->auto_connect == HCI_AUTO_CONN_ALWAYS &&
+			p->addr_type == ADDR_LE_DEV_PUBLIC ) {
+
+			RTKBT_DBG("%s(): Set RTKBT LE Power-on Whitelist for "
+				"%02x:%02x:%02x:%02x:%02x:%02x", __FUNCTION__,
+                                p->addr.b[5], p->addr.b[4], p->addr.b[3],
+                                p->addr.b[2], p->addr.b[1], p->addr.b[0]);
+
+			cmd = kzalloc(16, GFP_ATOMIC);
+			if (!cmd) {
+				RTKBT_ERR("Can't allocate memory for cmd");
+				return -ENOMEM;
+			}
+			cmd[0] = 0x7b;
+			cmd[1] = 0xfc;
+			cmd[2] = 0x07;
+			cmd[3] = 0x00;
+			cmd[4] = p->addr.b[0];
+			cmd[5] = p->addr.b[1];
+			cmd[6] = p->addr.b[2];
+			cmd[7] = p->addr.b[3];
+			cmd[8] = p->addr.b[4];
+			cmd[9] = p->addr.b[5];
+
+			result = __rtk_send_hci_cmd(udev, cmd, 10);
+			kfree(cmd);
+		}
+	}
+	hci_dev_unlock(hdev);
+
+	return result;
+}
+#endif
+
+static int rtkbt_pm_notify(struct notifier_block *notifier,
 		    ulong pm_event, void *unused)
 {
 	struct btusb_data *data;
@@ -1170,9 +1715,11 @@ int rtkbt_pm_notify(struct notifier_block *notifier,
 	struct usb_interface *intf;
 	struct hci_dev *hdev;
 	/* int err; */
+#if defined RTKBT_SWITCH_PATCH || defined RTKBT_TV_POWERON_WHITELIST
+	int result = 0;
+#endif
 #ifdef RTKBT_SWITCH_PATCH
 	u8 *cmd;
-	int result;
 	static u8 hci_state = 0;
 	struct api_context ctx;
 #endif
@@ -1248,13 +1795,23 @@ int rtkbt_pm_notify(struct notifier_block *notifier,
 		result = __rtk_send_hci_cmd(udev, cmd, 3);
 		kfree(cmd);
 		msleep(100); /* From FW colleague's recommendation */
-		result = download_lps_patch(intf);
+		result = download_special_patch(intf, "lps_");
+#endif
 
+#ifdef RTKBT_TV_POWERON_WHITELIST
+		result = rtkbt_lookup_le_device_poweron_whitelist(hdev, udev);
+		if (result < 0) {
+			RTKBT_ERR("rtkbt_lookup_le_device_poweron_whitelist error: %d", result);
+		}
+#endif
+
+#if defined RTKBT_SUSPEND_WAKEUP || defined RTKBT_SWITCH_PATCH
+#ifdef RTKBT_POWERKEY_WAKEUP
 		/* Tell the controller to wake up host if received special
 		 * advertising packet
 		 */
 		set_scan(intf);
-
+#endif
 		/* Send special vendor commands */
 #endif
 
@@ -1291,7 +1848,7 @@ int rtkbt_pm_notify(struct notifier_block *notifier,
 		}
 #endif
 
-#if BTUSB_RPM
+#ifdef BTUSB_RPM
 		RTKBT_DBG("%s: Re-enable autosuspend", __func__);
 		/* pm_runtime_use_autosuspend(&udev->dev);
 		 * pm_runtime_set_autosuspend_delay(&udev->dev, 2000);
@@ -1316,6 +1873,36 @@ int rtkbt_pm_notify(struct notifier_block *notifier,
 	return NOTIFY_DONE;
 }
 
+static int rtkbt_shutdown_notify(struct notifier_block *notifier,
+		    ulong pm_event, void *unused)
+{
+	struct btusb_data *data;
+	struct usb_device *udev;
+	struct usb_interface *intf;
+	struct hci_dev *hdev;
+	/* int err; */
+
+	data = container_of(notifier, struct btusb_data, shutdown_notifier);
+	udev = data->udev;
+	intf = data->intf;
+	hdev = data->hdev;
+
+	RTKBT_DBG("%s: pm_event %ld", __func__, pm_event);
+	switch (pm_event) {
+	case SYS_POWER_OFF:
+	case SYS_RESTART:
+#ifdef RTKBT_SHUTDOWN_WAKEUP
+		RTKBT_DBG("%s: power off", __func__);
+		set_scan(intf);
+#endif
+		break;
+
+	default:
+		break;
+	}
+
+	return NOTIFY_DONE;
+}
 
 static int btusb_probe(struct usb_interface *intf,
 		       const struct usb_device_id *id)
@@ -1327,18 +1914,28 @@ static int btusb_probe(struct usb_interface *intf,
 	struct usb_device *udev;
 	udev = interface_to_usbdev(intf);
 
-	RTKBT_DBG("btusb_probe intf->cur_altsetting->desc.bInterfaceNumber %d",
+	RTKBT_INFO("btusb_probe intf->cur_altsetting->desc.bInterfaceNumber %d",
 		  intf->cur_altsetting->desc.bInterfaceNumber);
 
 	/* interface numbers are hardcoded in the spec */
 	if (intf->cur_altsetting->desc.bInterfaceNumber != 0)
 		return -ENODEV;
 
+	if (!id->driver_info) {
+		const struct usb_device_id *match;
+
+		match = usb_match_id(intf, blacklist_table);
+		if (match)
+			id = match;
+		else
+			return -ENODEV;
+	}
+
 	/*******************************/
 	flag1 = device_can_wakeup(&udev->dev);
 	flag2 = device_may_wakeup(&udev->dev);
 	RTKBT_DBG("btusb_probe can_wakeup %x, may wakeup %x", flag1, flag2);
-#if BTUSB_WAKEUP_HOST
+#ifdef BTUSB_WAKEUP_HOST
 	device_wakeup_enable(&udev->dev);
 #endif
 	//device_wakeup_enable(&udev->dev);
@@ -1358,6 +1955,10 @@ static int btusb_probe(struct usb_interface *intf,
 
 	for (i = 0; i < intf->cur_altsetting->desc.bNumEndpoints; i++) {
 		ep_desc = &intf->cur_altsetting->endpoint[i].desc;
+		if (!data->intr_ep && usb_endpoint_is_bulk_in(ep_desc) && (ep_desc->bEndpointAddress == 0x81)) {
+			data->intr_ep = ep_desc;
+			continue;
+		}
 
 		if (!data->intr_ep && usb_endpoint_is_int_in(ep_desc)) {
 			data->intr_ep = ep_desc;
@@ -1419,6 +2020,13 @@ static int btusb_probe(struct usb_interface *intf,
 	hdev->flush = btusb_flush;
 	hdev->send = btusb_send_frame;
 	hdev->notify = btusb_notify;
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
+	hdev->setup = btusb_setup;
+#endif
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
+	hdev->shutdown = btusb_shutdown;
+#endif
 
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 4, 0)
 	hci_set_drvdata(hdev, data);
@@ -1428,10 +2036,14 @@ static int btusb_probe(struct usb_interface *intf,
 	hdev->owner = THIS_MODULE;
 #endif
 
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	set_bit(BTUSB_USE_ALT3_FOR_WBS, &data->flags);
+	set_bit(HCI_QUIRK_WIDEBAND_SPEECH_SUPPORTED, &hdev->quirks);
+#endif
+
 #if HCI_VERSION_CODE >= KERNEL_VERSION(3, 7, 1)
 	if (!reset)
 		set_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks);
-	RTKBT_DBG("set_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks);");
 #endif
 
 	/* Interface numbers are hardcoded in the specification */
@@ -1464,6 +2076,9 @@ static int btusb_probe(struct usb_interface *intf,
 	data->pm_notifier.notifier_call = rtkbt_pm_notify;
 	register_pm_notifier(&data->pm_notifier);
 
+	/* Register POWER-OFF notifier */
+	data->shutdown_notifier.notifier_call = rtkbt_shutdown_notify;
+	register_reboot_notifier(&data->shutdown_notifier);
 #ifdef BTCOEX
 	rtk_btcoex_probe(hdev);
 #endif
@@ -1490,6 +2105,7 @@ static void btusb_disconnect(struct usb_interface *intf)
 
 	/* Un-register PM notifier */
 	unregister_pm_notifier(&data->pm_notifier);
+	unregister_reboot_notifier(&data->shutdown_notifier);
 
 	/*******************************/
 	patch_remove(intf);
@@ -1671,7 +2287,8 @@ static struct usb_driver btusb_driver = {
 #ifdef CONFIG_PM
 	.suspend = btusb_suspend,
 	.resume = btusb_resume,
-#ifdef RTKBT_SWITCH_PATCH
+#if defined RTKBT_SWITCH_PATCH || defined RTKBT_SUSPEND_WAKEUP || defined \
+	RTKBT_SHUTDOWN_WAKEUP
 	.reset_resume = btusb_resume,
 #endif
 #endif
@@ -1708,4 +2325,3 @@ MODULE_AUTHOR("");
 MODULE_DESCRIPTION("Realtek Bluetooth USB driver ver " VERSION);
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");
-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);

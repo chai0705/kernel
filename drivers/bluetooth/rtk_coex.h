@@ -49,9 +49,16 @@
 #define HCI_EV_LE_CONN_UPDATE_COMPLETE	                0x03
 #define HCI_EV_LE_ENHANCED_CONN_COMPLETE    0x0a
 
+#define HCI_EV_LE_CIS_EST                 0x19
+#define HCI_EV_LE_CREATE_BIG_CPL          0x1b
+#define HCI_EV_LE_TERM_BIG_CPL            0x1c
+#define HCI_EV_LE_BIG_SYNC_EST            0x1d
+#define HCI_EV_LE_BIG_SYNC_LOST           0x1e
+
 //vendor cmd to fw
 #define HCI_VENDOR_ENABLE_PROFILE_REPORT_COMMAND        0xfc18
-#define HCI_VENDOR_SET_PROFILE_REPORT_COMMAND           0xfc19
+#define HCI_VENDOR_SET_PROFILE_REPORT_LEGACY_COMMAND    0xfc19
+#define HCI_VENDOR_SET_PROFILE_REPORT_COMMAND		0xfc1B
 #define HCI_VENDOR_MAILBOX_CMD                          0xfc8f
 #define HCI_VENDOR_SET_BITPOOL				0xfc51
 
@@ -138,7 +145,7 @@
 #define PSM_AVDTP   0x0019
 #define PSM_FTP     0x1001
 #define PSM_BIP     0x1003
-#define PSM_OPP     0x1015
+#define PSM_OPP     0x1005
 //--add more if needed--//
 
 enum {
@@ -150,7 +157,8 @@ enum {
 	profile_hogp = 5,
 	profile_voice = 6,
 	profile_sink = 7,
-	profile_max = 8
+	profile_le_audio = 8,
+	profile_max = 9
 };
 
 #define A2DP_SIGNAL	0x01
@@ -170,9 +178,17 @@ typedef struct {
 typedef struct rtl_hci_conn {
 	struct list_head list;
 	uint16_t handle;
+	struct delayed_work a2dp_count_work;
+	struct delayed_work pan_count_work;
+	struct delayed_work hogp_count_work;
+	uint32_t a2dp_packet_count;
+	uint32_t pan_packet_count;
+	uint32_t hogp_packet_count;
+	uint32_t voice_packet_count;
 	uint8_t type;		// 0:l2cap, 1:sco/esco, 2:le
-	uint8_t profile_bitmap;
-	int8_t profile_refcount[8];
+	uint16_t profile_bitmap;
+	uint16_t profile_status;
+	int8_t profile_refcount[profile_max];
 } rtk_conn_prof, *prtk_conn_prof;
 
 #ifdef RTB_SOFTWARE_MAILBOX
@@ -233,29 +249,24 @@ struct rtl_coex_struct {
 	struct sockaddr_in wifi_addr;
 	struct timer_list polling_timer;
 #endif
-	struct timer_list a2dp_count_timer;
-	struct timer_list pan_count_timer;
-	struct timer_list hogp_count_timer;
 #ifdef RTB_SOFTWARE_MAILBOX
 	struct workqueue_struct *sock_wq;
 	struct delayed_work sock_work;
 #endif
 	struct workqueue_struct *fw_wq;
+	struct workqueue_struct *timer_wq;
 	struct delayed_work fw_work;
 	struct delayed_work l2_work;
+	struct delayed_work cmd_work;
 #ifdef RTB_SOFTWARE_MAILBOX
 	struct sock *sk;
 #endif
 	struct urb *urb;
 	spinlock_t spin_lock_sock;
-	spinlock_t spin_lock_profile;
-	uint32_t a2dp_packet_count;
-	uint32_t pan_packet_count;
-	uint32_t hogp_packet_count;
-	uint32_t voice_packet_count;
-	uint8_t profile_bitmap;
-	uint8_t profile_status;
-	int8_t profile_refcount[8];
+	struct mutex profile_mutex;
+	uint16_t profile_bitmap;
+	uint16_t profile_status;
+	int8_t profile_refcount[profile_max];
 	uint8_t ispairing;
 	uint8_t isinquirying;
 	uint8_t ispaging;
@@ -274,6 +285,7 @@ struct rtl_coex_struct {
 	uint8_t wifi_on;
 	uint8_t sock_open;
 #endif
+
 	unsigned long cmd_last_tx;
 
 	/* hci ev buff */

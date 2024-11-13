@@ -41,24 +41,22 @@
 /* #define HCI_VERSION_CODE KERNEL_VERSION(3, 14, 41) */
 #define HCI_VERSION_CODE LINUX_VERSION_CODE
 
+#ifdef CONFIG_BTCOEX
 #define BTCOEX
+#endif
 
 /***********************************
 ** Realtek - For rtk_btusb driver **
 ***********************************/
-#define BTUSB_WAKEUP_HOST		0	/* 1  enable; 0  disable */
+#ifdef CONFIG_BTUSB_WAKEUP_HOST
+#define BTUSB_WAKEUP_HOST
+#endif
 
 #define URB_CANCELING_DELAY_MS	10	// Added by Realtek
 #if HCI_VERSION_CODE > KERNEL_VERSION(2, 6, 33)
 #define HDEV_BUS		hdev->bus
 #else
 #define HDEV_BUS		hdev->type
-#endif
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 33)
-#define USB_RPM			1
-#else
-#define USB_RPM			0
 #endif
 
 #if HCI_VERSION_CODE < KERNEL_VERSION(2, 6, 36)
@@ -97,6 +95,7 @@ int btusb_send_frame(struct sk_buff *skb);
 #define BTUSB_ISOC_RUNNING		2
 #define BTUSB_SUSPENDING		3
 #define BTUSB_DID_ISO_RESUME	4
+#define BTUSB_USE_ALT3_FOR_WBS	15
 
 struct btusb_data {
 	struct hci_dev *hdev;
@@ -135,6 +134,11 @@ struct btusb_data {
 	__u8 cmdreq_type;
 
 	unsigned int sco_num;
+
+#if HCI_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	unsigned int air_mode;
+	bool usb_alt6_packet_flow;
+#endif
 	int isoc_altsetting;
 	int suspend_count;
 
@@ -142,5 +146,6 @@ struct btusb_data {
 	int (*recv_bulk) (struct btusb_data * data, void *buffer, int count);
 #endif
 	struct notifier_block pm_notifier;
+	struct notifier_block shutdown_notifier;
 	void *context;
 };
