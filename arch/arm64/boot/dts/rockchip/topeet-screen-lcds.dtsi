@@ -1,6 +1,7 @@
 #define LCD_TYPE_HDMI  //VP0
-// #define LCD_TYPE_MIPI0  //VP1 
-// #define LCD_TYPE_LVDS_7_0  //VP1                                                                            //#define LCD_TYPE_LVDS_10_1_1280x800_GT911  //VP2
+// #define LCD_TYPE_MIPI0  //VP1
+// #define LCD_TYPE_LVDS_7_0  //VP1
+//#define LCD_TYPE_LVDS_10_1_1280x800_GT911  //VP1
 // #define LCD_TYPE_LVDS_10_1_1280x800_GT9271 //VP1
 // #define LCD_TYPE_LVDS_10_1_1024x600_GT911  //VP1
 
@@ -104,7 +105,7 @@ backlight: backlight {
 
 #if defined(LCD_TYPE_HDMI)
 //HDMI配置
-&vp0 {                                                                                                           
+&vp0 {
     status = "okay";
 };
 
@@ -132,7 +133,7 @@ backlight: backlight {
 };
 
 &display_subsystem {
-    clocks = <&hdptxphy_hdmi>;                                                                               
+    clocks = <&hdptxphy_hdmi>;
     clock-names = "hdmi0_phy_pll";
 };
 #endif
@@ -535,7 +536,7 @@ backlight: backlight {
         disp_timings0: display-timings {
             native-mode = <&dsi_timing0>;
             dsi_timing0: timing0 {
-                clock-frequency = <147456000>;
+                clock-frequency = <80000000>;
                 hactive = <1280>;
                 vactive = <800>;
                 hback-porch = <320>;
